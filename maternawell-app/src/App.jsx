@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import MotherInfoForm from './pages/MotherInfoForm';
 import ScreeningQuestion from './pages/ScreeningQuestion';
 import Results from './pages/Results';
+import SelfReferralPage from './pages/SelfReferralPage';
+import SupervisorDashboard from './pages/SupervisorDashboard';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -68,6 +70,15 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/supervisor"
+        element={
+          <ProtectedRoute>
+            <SupervisorDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/self-referral" element={<SelfReferralPage />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

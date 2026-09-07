@@ -12,18 +12,43 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Clock
+  Clock,
+  Shield,
+  Smartphone,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useScreening } from '../context/ScreeningContext';
+import ScreeningCard from '../components/ScreeningCard';
+import { format } from 'date-fns';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { screenings, getStats } = useScreening();
+  const { screenings, getStats, isOnline, lastSyncTime, performSync, deleteScreening } = useScreening();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  const [selectedScreening, setSelectedScreening] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const stats = getStats();
+
+  const filteredScreenings = screenings.filter(s => 
+    s.motherData?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.motherData?.fileNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleViewScreening = (screening) => {
+    setSelectedScreening(screening);
+    setShowModal(true);
+  };
+
+  const handleDeleteScreening = (id) => {
+    if (window.confirm('Are you sure you want to delete this screening?')) {
+      deleteScreening(id);
+    }
+  };
 
   const statCards = [
     {
