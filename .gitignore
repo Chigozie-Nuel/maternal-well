@@ -2,12 +2,17 @@
 # Dependencies
 node_modules/
 
+# Build outputs
+dist/
+build/
+target/
+
 # Environment variables
 .env
 .env.local
 .env.*
 
-# Editor/IDE files
+# IDE files
 .vscode/
 .idea/
 *.swp
@@ -17,47 +22,50 @@ node_modules/
 # Logs
 *.log
 
-# Build artifacts
-dist/
-build/
-target/
-
-# Python
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.DS_Store
-Thumbs.db
 
-# JavaScript
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Generated documentation
-docs/_build/
+# Temporary files
+*.tmp
+*.temp
 
 # OS generated files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Testing
+.mypy_cache/
+.pytest_cache/
+
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```
