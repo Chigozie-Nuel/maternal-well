@@ -12,43 +12,18 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle,
-  Clock,
-  Shield,
-  Smartphone,
-  Wifi,
-  WifiOff
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useScreening } from '../context/ScreeningContext';
-import ScreeningCard from '../components/ScreeningCard';
-import { format } from 'date-fns';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { screenings, getStats, isOnline, lastSyncTime, performSync, deleteScreening } = useScreening();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedScreening, setSelectedScreening] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const { screenings, getStats } = useScreening();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   
   const stats = getStats();
-
-  const filteredScreenings = screenings.filter(s => 
-    s.motherData?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.motherData?.fileNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleViewScreening = (screening) => {
-    setSelectedScreening(screening);
-    setShowModal(true);
-  };
-
-  const handleDeleteScreening = (id) => {
-    if (window.confirm('Are you sure you want to delete this screening?')) {
-      deleteScreening(id);
-    }
-  };
 
   const statCards = [
     {
@@ -81,174 +56,110 @@ const Dashboard = () => {
     }
   ];
 
-  return (
-    <div style={{ minHeight: '100vh', background: '#F8F9FA' }}>
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
-            zIndex: 40,
-            display: 'none' // Hidden on desktop
-          }}
-        />
-      )}
+  const navItems = [
+    {
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      active: true,
+      onClick: () => navigate('/dashboard')
+    },
+    {
+      label: 'New Screening',
+      icon: PlusCircle,
+      onClick: () => navigate('/new-screening')
+    },
+    {
+      label: 'All Screenings',
+      icon: Users,
+      onClick: () => navigate('/screenings')
+    }
+  ];
 
+  return (
+    <div className={`dashboard-shell ${sidebarOpen ? 'sidebar-open' : 'sidebar-collapsed'}`}>
       {/* Sidebar */}
       <motion.aside
         initial={false}
-        animate={{ x: sidebarOpen ? 0 : '-100%' }}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '280px',
-          height: '100vh',
-          background: 'white',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
-          zIndex: 50,
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
+        animate={{ width: sidebarOpen ? 280 : 88 }}
+        transition={{ duration: 0.25, ease: 'easeInOut' }}
+        className="dashboard-sidebar"
+        aria-label="Dashboard navigation"
       >
-        <div style={{ marginBottom: '32px' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '8px'
-          }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              background: 'linear-gradient(135deg, #2E7D32, #4CAF50)',
-              borderRadius: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand">
+            <div className="sidebar-brand-icon">
               <FileText size={24} color="white" />
             </div>
-            <div>
-              <h1 style={{ fontSize: '18px', fontWeight: '700', color: '#212121' }}>
+            {sidebarOpen && (
+              <div className="sidebar-brand-copy">
+                <h1>
                 Maternawell
-              </h1>
-              <p style={{ fontSize: '12px', color: '#757575' }}>Nigeria</p>
-            </div>
+                </h1>
+                <p>Nigeria</p>
+              </div>
+            )}
           </div>
+
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarOpen(prev => !prev)}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
 
-        <nav style={{ flex: 1 }}>
-          <button
-            onClick={() => navigate('/dashboard')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              background: '#E8F5E9',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              marginBottom: '8px',
-              color: '#2E7D32',
-              fontWeight: '600'
-            }}
-          >
-            <LayoutDashboard size={20} />
-            Dashboard
-          </button>
-          
-          <button
-            onClick={() => navigate('/new-screening')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              marginBottom: '8px',
-              color: '#757575',
-              fontWeight: '500'
-            }}
-          >
-            <PlusCircle size={20} />
-            New Screening
-          </button>
-          
-          <button
-            onClick={() => navigate('/screenings')}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              marginBottom: '8px',
-              color: '#757575',
-              fontWeight: '500'
-            }}
-          >
-            <Users size={20} />
-            All Screenings
-          </button>
+        <nav className="sidebar-nav" aria-label="Primary navigation">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <button
+                key={item.label}
+                onClick={item.onClick}
+                className={`sidebar-nav-item ${item.active ? 'active' : ''}`}
+                title={!sidebarOpen ? item.label : undefined}
+                aria-label={item.label}
+              >
+                <Icon size={20} />
+                {sidebarOpen && <span>{item.label}</span>}
+              </button>
+            );
+          })}
         </nav>
 
-        <div style={{ borderTop: '1px solid #E0E0E0', paddingTop: '24px' }}>
-          <div style={{
-            padding: '16px',
-            background: '#F8F9FA',
-            borderRadius: '12px',
-            marginBottom: '16px'
-          }}>
-            <p style={{ fontSize: '13px', color: '#757575', marginBottom: '4px' }}>Logged in as</p>
-            <p style={{ fontSize: '14px', fontWeight: '600', color: '#212121' }}>{user?.name}</p>
-            <p style={{ fontSize: '12px', color: '#757575' }}>{user?.facility}</p>
-          </div>
-          
+        <div className="sidebar-footer">
+          {sidebarOpen ? (
+            <div className="sidebar-user-card">
+              <p className="sidebar-user-kicker">Logged in as</p>
+              <p className="sidebar-user-name">{user?.name}</p>
+              <p className="sidebar-user-facility">{user?.facility}</p>
+            </div>
+          ) : (
+            <div className="sidebar-user-compact" title={`${user?.name || 'Health worker'} - ${user?.facility || 'Facility'}`}>
+              {user?.staffId?.slice(0, 2).toUpperCase() || 'HW'}
+            </div>
+          )}
+
           <button
+            className="sidebar-logout"
             onClick={() => {
               logout();
               navigate('/login');
             }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px 16px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              color: '#EF5350',
-              fontWeight: '500'
-            }}
+            title={!sidebarOpen ? 'Logout' : undefined}
+            aria-label="Logout"
           >
             <LogOut size={20} />
-            Logout
+            {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
       </motion.aside>
 
       {/* Main Content */}
-      <main style={{ marginLeft: '0', paddingLeft: '0' }}>
+      <main className="dashboard-main">
         {/* Header */}
         <header style={{
           background: 'white',
@@ -263,7 +174,8 @@ const Dashboard = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={() => setSidebarOpen(prev => !prev)}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
               style={{
                 background: 'none',
                 border: 'none',
