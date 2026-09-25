@@ -1,3 +1,33 @@
+/**
+ * Maternawell Nigeria - Clinical Constants & EPDS Scale Definitions
+ * Validated for Primary Health Centers (PHCs) in Nigeria.
+ */
+
+import {
+  NIGERIAN_EPDS_CUTOFF,
+  HIGH_RISK_CUTOFF,
+  RISK_TIERS,
+  scoreEpds,
+  classifyRisk,
+  isEscalation,
+  getReferralPlan
+} from '../domain/epds';
+
+export {
+  NIGERIAN_EPDS_CUTOFF,
+  HIGH_RISK_CUTOFF,
+  RISK_TIERS,
+  scoreEpds,
+  classifyRisk,
+  isEscalation,
+  getReferralPlan
+};
+
+/**
+ * Edinburgh Postnatal Depression Scale (EPDS)
+ * 10-item clinical questionnaire (Cox et al., 1987)
+ * Validated in Nigeria (Uwakwe & Okonkwo, 2003)
+ */
 export const EPDS_QUESTIONS = [
   {
     id: 1,
@@ -102,56 +132,51 @@ export const EPDS_QUESTIONS = [
   }
 ];
 
-export const RISK_TIERS = {
-  LOW: { min: 0, max: 8, label: "Low Risk", color: "#66BB6A" },
-  MEDIUM: { min: 9, max: 12, label: "Moderate Risk", color: "#FFA726" },
-  HIGH: { min: 13, max: 30, label: "High Risk", color: "#EF5350" }
-};
-
 export const REFERRAL_ACTIONS = {
   LOW: [
-    "Continue routine postnatal care",
-    "Provide psychoeducation on normal postpartum adjustments",
-    "Schedule follow-up in 4-6 weeks",
-    "Encourage family support systems"
+    "Continue routine postnatal healthcare checkups and immunization visits.",
+    "Provide reassurance and psychoeducation on normal maternal adjustments and self-care.",
+    "Encourage family support systems and community peer connections.",
+    "Schedule routine follow-up assessment in 4 to 6 weeks."
   ],
   MEDIUM: [
-    "Refer to Facility Supervisor for assessment within 1 week",
-    "Provide counseling on stress management",
-    "Consider peer support group referral",
-    "Monitor closely with weekly check-ins",
-    "Educate family members on supporting the mother"
+    "Refer to Facility Supervisor / designated PHC clinician for assessment within 1 week.",
+    "Provide structured primary care counseling on stress and postpartum adjustment.",
+    "Refer to community mother-to-mother or peer support group.",
+    "Schedule close follow-up with weekly check-ins.",
+    "Provide psychoeducation to partner and family on supporting the mother."
   ],
   HIGH: [
-    "URGENT: Refer to Facility Supervisor same day",
-    "Immediate mental health specialist consultation required",
-    "Ensure mother is not left alone if Item-10 positive",
-    "Activate emergency contact protocol",
-    "Document and track referral completion"
+    "URGENT: Same-day escalation to Facility Supervisor required.",
+    "Immediate psychiatric referral / mhGAP mental health specialist consultation.",
+    "Safety priority: Ensure mother is accompanied and not left alone.",
+    "Activate emergency family and facility contact protocol.",
+    "Document and track referral completion in the facility case register."
   ]
 };
 
+/**
+ * Primary Health Centers (PHCs) targeted by MeHPriC and Lagos State Primary Health Care Board
+ */
 export const FACILITIES = [
-  { id: 1, name: "Lagos University Teaching Hospital (LUTH)", type: "Tertiary", location: "Idi-Araba, Lagos" },
-  { id: 2, name: "Lagos State University Teaching Hospital (LASUTH)", type: "Tertiary", location: "Ikeja, Lagos" },
-  { id: 3, name: "Gbagada General Hospital", type: "Secondary", location: "Gbagada, Lagos" },
-  { id: 4, name: "Isolo General Hospital", type: "Secondary", location: "Isolo, Lagos" },
-  { id: 5, name: "Surulere General Hospital", type: "Secondary", location: "Surulere, Lagos" },
-  { id: 6, name: "Badagry General Hospital", type: "Secondary", location: "Badagry, Lagos" },
-  { id: 7, name: "Epe General Hospital", type: "Secondary", location: "Epe, Lagos" },
-  { id: 8, name: "Ikorodo General Hospital", type: "Secondary", location: "Ikorodu, Lagos" }
+  { id: 'phc-ikeja', name: "Ikeja Primary Health Centre", lga: "Ikeja", location: "Wamako Street, Ikeja, Lagos" },
+  { id: 'phc-surulere', name: "Surulere Primary Health Centre", lga: "Surulere", location: "Akerele Ext., Surulere, Lagos" },
+  { id: 'phc-epe', name: "Epe Primary Health Centre", lga: "Epe", location: "Marina Road, Epe, Lagos" },
+  { id: 'phc-ikorodu', name: "Ikorodu Primary Health Centre", lga: "Ikorodu", location: "Ayangburen Road, Ikorodu, Lagos" },
+  { id: 'phc-lagos-island', name: "Lagos Island Primary Health Centre", lga: "Lagos Island", location: "Broad Street, Lagos Island" },
+  { id: 'phc-alimosho', name: "Alimosho Primary Health Centre", lga: "Alimosho", location: "Council Road, Idimu, Lagos" },
+  { id: 'phc-badagry', name: "Badagry Primary Health Centre", lga: "Badagry", location: "Hospital Road, Badagry, Lagos" },
+  { id: 'phc-eti-osa', name: "Eti-Osa Primary Health Centre", lga: "Eti-Osa", location: "Igbo-Efon, Lekki, Lagos" }
 ];
 
 export const calculateScore = (answers) => {
-  return Object.values(answers).reduce((sum, value) => sum + value, 0);
+  return scoreEpds(answers);
 };
 
 export const getRiskTier = (score) => {
-  if (score <= RISK_TIERS.LOW.max) return RISK_TIERS.LOW;
-  if (score <= RISK_TIERS.MEDIUM.max) return RISK_TIERS.MEDIUM;
-  return RISK_TIERS.HIGH;
+  return classifyRisk(score);
 };
 
 export const hasSelfHarmRisk = (answers) => {
-  return answers[10] > 0;
+  return isEscalation(answers);
 };

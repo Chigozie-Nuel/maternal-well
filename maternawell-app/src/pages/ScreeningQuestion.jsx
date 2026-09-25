@@ -1,56 +1,57 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, AlertTriangle, Heart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, Heart, ShieldAlert } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
 import { EPDS_QUESTIONS } from '../utils/constants';
 
 const ScreeningQuestion = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentScreening, updateAnswer, nextQuestion, previousQuestion, resetCurrentScreening } = useScreening();
+  const { currentScreening, answerAndAdvance, previousQuestion, resetCurrentScreening } = useScreening();
   const [selectedAnswer, setSelectedAnswer] = useState(null);
 
   if (!currentScreening || currentScreening.id !== id) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <h2>No active screening found</h2>
-        <button onClick={() => navigate('/dashboard')} className="btn btn-primary">
+        <button onClick={() => navigate('/dashboard')} className="btn btn-primary" style={{ marginTop: '16px' }}>
           Go to Dashboard
         </button>
       </div>
     );
   }
 
-  const question = EPDS_QUESTIONS.find(q => q.id === currentScreening.currentQuestion);
-  const progress = (currentScreening.currentQuestion / 10) * 100;
-  const isLastQuestion = currentScreening.currentQuestion === 10;
-  const isFirstQuestion = currentScreening.currentQuestion === 1;
+  const currentQNum = currentScreening.currentQuestion || 1;
+  const question = EPDS_QUESTIONS.find(q => q.id === currentQNum) || EPDS_QUESTIONS[0];
+  const progress = (currentQNum / 10) * 100;
+  const isLastQuestion = currentQNum === 10;
+  const isFirstQuestion = currentQNum === 1;
+
+  // Restore existing answer when navigating between questions
+  useEffect(() => {
+    if (currentScreening && currentScreening.answers) {
+      const saved = currentScreening.answers[currentQNum];
+      setSelectedAnswer(saved !== undefined ? saved : null);
+    } else {
+      setSelectedAnswer(null);
+    }
+  }, [currentQNum, currentScreening]);
 
   const handleContinue = () => {
     if (selectedAnswer !== null) {
-      updateAnswer(question.id, selectedAnswer);
-      
+      const result = answerAndAdvance(question.id, selectedAnswer);
       if (isLastQuestion) {
-        const result = nextQuestion();
-        if (result) {
+        if (result && result.id) {
           navigate(`/results/${result.id}`);
         }
-      } else {
-        nextQuestion();
-        setSelectedAnswer(null);
       }
     }
   };
 
   const handleBack = () => {
     if (!isFirstQuestion) {
-      const prev = previousQuestion();
-      if (prev && prev.answers[prev.currentQuestion] !== undefined) {
-        setSelectedAnswer(prev.answers[prev.currentQuestion]);
-      } else {
-        setSelectedAnswer(null);
-      }
+      previousQuestion();
     }
   };
 
@@ -70,7 +71,7 @@ const ScreeningQuestion = () => {
             marginBottom: '8px'
           }}>
             <span style={{ fontSize: '14px', fontWeight: '600', color: '#757575' }}>
-              Question {currentScreening.currentQuestion} of 10
+              Question {currentQNum} of 10
             </span>
             <span style={{ fontSize: '14px', fontWeight: '600', color: '#2E7D32' }}>
               {Math.round(progress)}% Complete
@@ -86,7 +87,7 @@ const ScreeningQuestion = () => {
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.5 }}
+              transition={{ duration: 0.3 }}
               style={{
                 height: '100%',
                 background: 'linear-gradient(90deg, #2E7D32, #4CAF50)',
@@ -98,21 +99,21 @@ const ScreeningQuestion = () => {
 
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentScreening.currentQuestion}
-            initial={{ opacity: 0, x: 50 }}
+            key={currentQNum}
+            initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
-            transition={{ duration: 0.3 }}
+            exit={{ opacity: 0, x: -40 }}
+            transition={{ duration: 0.25 }}
             className="card"
             style={{ padding: '32px' }}
           >
             {question.isCritical && (
               <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
+                initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   gap: '12px',
                   padding: '16px',
                   background: '#FFF3E0',
@@ -121,13 +122,13 @@ const ScreeningQuestion = () => {
                   border: '2px solid #FFA726'
                 }}
               >
-                <AlertTriangle size={24} color="#FFA726" />
+                <AlertTriangle size={24} color="#F57C00" style={{ flexShrink: 0, marginTop: '2px' }} />
                 <div>
-                  <p style={{ fontWeight: '600', color: '#F57C00', marginBottom: '4px' }}>
-                    Sensitive Question
+                  <p style={{ fontWeight: '700', color: '#E65100', marginBottom: '4px' }}>
+                    Clinical Safety Alert: Item 10 (Self-Harm Screening)
                   </p>
-                  <p style={{ fontSize: '13px', color: '#F57C00' }}>
-                    This question addresses self-harm. Please ensure privacy and provide support.
+                  <p style={{ fontSize: '13px', color: '#795548', lineHeight: '1.4' }}>
+                    Any non-zero response triggers a mandatory same-day escalation flag. Ensure patient privacy and clinical accompaniment.
                   </p>
                 </div>
               </motion.div>
@@ -157,36 +158,57 @@ const ScreeningQuestion = () => {
                 {question.text}
               </h2>
               <p style={{ color: '#757575', fontSize: '14px' }}>
-                Select the response that best describes how you have felt in the past 7 days.
+                Select the option that best describes how the mother has felt in the past 7 days.
               </p>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '32px' }}>
-              {question.options.map((option, index) => (
-                <motion.button
-                  key={option.value}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setSelectedAnswer(option.value)}
-                  style={{
-                    padding: '16px 20px',
-                    border: `2px solid ${selectedAnswer === option.value ? '#2E7D32' : '#E0E0E0'}`,
-                    background: selectedAnswer === option.value ? '#E8F5E9' : 'white',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.3s ease',
-                    fontSize: '15px',
-                    color: selectedAnswer === option.value ? '#2E7D32' : '#212121',
-                    fontWeight: selectedAnswer === option.value ? '600' : '400'
-                  }}
-                >
-                  {option.label}
-                </motion.button>
-              ))}
+              {question.options.map((option, index) => {
+                const isSelected = selectedAnswer === option.value;
+                return (
+                  <motion.button
+                    key={`${question.id}-${option.value}`}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => setSelectedAnswer(option.value)}
+                    type="button"
+                    style={{
+                      padding: '16px 20px',
+                      border: `2px solid ${isSelected ? '#2E7D32' : '#E0E0E0'}`,
+                      background: isSelected ? '#E8F5E9' : 'white',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      fontSize: '15px',
+                      color: isSelected ? '#1B5E20' : '#212121',
+                      fontWeight: isSelected ? '600' : '400',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    <span style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      border: `2px solid ${isSelected ? '#2E7D32' : '#BDBDBD'}`,
+                      background: isSelected ? '#2E7D32' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      marginLeft: '12px'
+                    }}>
+                      {isSelected && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'white' }} />}
+                    </span>
+                  </motion.button>
+                );
+              })}
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
@@ -195,6 +217,7 @@ const ScreeningQuestion = () => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleBack}
+                  type="button"
                   className="btn btn-secondary"
                   style={{ flex: 1 }}
                 >
@@ -208,6 +231,7 @@ const ScreeningQuestion = () => {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleContinue}
                 disabled={selectedAnswer === null}
+                type="button"
                 className="btn btn-primary"
                 style={{ 
                   flex: !isFirstQuestion ? '2' : '1',
@@ -224,11 +248,18 @@ const ScreeningQuestion = () => {
 
         <div style={{
           marginTop: '20px',
-          textAlign: 'center'
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
         }}>
+          <p style={{ fontSize: '12px', color: '#757575', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ShieldAlert size={14} />
+            Screening result, not a clinical diagnosis.
+          </p>
+
           <button
             onClick={() => {
-              if (window.confirm('Are you sure you want to cancel this screening?')) {
+              if (window.confirm('Are you sure you want to cancel this screening? Your progress is saved as draft.')) {
                 resetCurrentScreening();
                 navigate('/dashboard');
               }
@@ -238,7 +269,7 @@ const ScreeningQuestion = () => {
               border: 'none',
               color: '#757575',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: '13px',
               textDecoration: 'underline'
             }}
           >

@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { calculateScore, getRiskTier, hasSelfHarmRisk } from '../utils/constants';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { scoreEpds, classifyRisk, isEscalation, getReferralPlan } from '../domain/epds';
 
 const ScreeningContext = createContext(null);
 
@@ -11,17 +11,43 @@ export const useScreening = () => {
   return context;
 };
 
+const getCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem('maternawell_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const ScreeningProvider = ({ children }) => {
   const [screenings, setScreenings] = useState(() => {
-    const saved = localStorage.getItem('maternawell_screenings');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('maternawell_screenings');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
-  const [currentScreening, setCurrentScreening] = useState(null);
-  const [auditLogs, setAuditLogs] = useState(() => {
-    const saved = localStorage.getItem('maternawell_audit_logs');
-    return saved ? JSON.parse(saved) : [];
+  const [currentScreening, setCurrentScreening] = useState(() => {
+    try {
+      const draft = localStorage.getItem('maternawell_active_draft');
+      return draft ? JSON.parse(draft) : null;
+    } catch {
+      return null;
+    }
   });
+
+  const [auditLogs, setAuditLogs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('maternawell_audit_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
@@ -32,6 +58,48 @@ export const ScreeningProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('maternawell_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  useEffect(() => {
+    if (currentScreening && !currentScreening.completed) {
+      localStorage.setItem('maternawell_active_draft', JSON.stringify(currentScreening));
+    } else {
+      localStorage.removeItem('maternawell_active_draft');
+    }
+  }, [currentScreening]);
+
+  const addAuditLog = useCallback((action, details) => {
+    const user = getCurrentUser();
+    const log = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      action,
+      details,
+      userId: user?.staffId || user?.id || user?.name || 'anonymous',
+      facilityId: user?.facility || 'Unknown Facility'
+    };
+    setAuditLogs(prev => [log, ...prev].slice(0, 1000));
+  }, []);
+
+  const performSync = useCallback(async () => {
+    const pendingScreenings = screenings.filter(s => s.syncStatus === 'pending');
+    if (pendingScreenings.length === 0) return;
+
+    try {
+      // Offline-first simulation / API bridge
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      setScreenings(prev => prev.map(s => 
+        s.syncStatus === 'pending' ? { ...s, syncStatus: 'synced', syncedAt: new Date().toISOString() } : s
+      ));
+      
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      addAuditLog('DATA_SYNCED', { count: pendingScreenings.length, timestamp: now });
+    } catch (error) {
+      console.error('Sync failed:', error);
+      addAuditLog('SYNC_FAILED', { error: error.message });
+    }
+  }, [screenings, addAuditLog]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -47,163 +115,165 @@ export const ScreeningProvider = ({ children }) => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
-
-  const addAuditLog = (action, details) => {
-    const log = {
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      action,
-      details,
-      userId: localStorage.getItem('maternawell_user')?.id || 'anonymous'
-    };
-    setAuditLogs(prev => [log, ...prev].slice(0, 1000));
-  };
+  }, [performSync]);
 
   const startScreening = (motherData) => {
+    const standardizedMother = {
+      ...motherData,
+      name: motherData.name || motherData.motherName || 'Unnamed Patient',
+      motherName: motherData.name || motherData.motherName || 'Unnamed Patient',
+      phone: motherData.phone || motherData.phoneNumber || '',
+      phoneNumber: motherData.phone || motherData.phoneNumber || '',
+      fileNumber: motherData.fileNumber || `PHC-${Date.now().toString().slice(-6)}`,
+      consentGiven: motherData.consentGiven ?? true,
+      consentDate: motherData.consentDate || new Date().toISOString()
+    };
+
     const newScreening = {
       id: Date.now().toString(),
-      motherData,
+      motherData: standardizedMother,
       answers: {},
       currentQuestion: 1,
       completed: false,
       score: null,
       riskTier: null,
       hasSelfHarmRisk: false,
+      referralPlan: null,
       referralActions: [],
       createdAt: new Date().toISOString(),
       status: 'in_progress',
-      syncStatus: 'synced'
+      syncStatus: 'pending'
     };
+
     setCurrentScreening(newScreening);
-    addAuditLog('SCREENING_STARTED', { screeningId: newScreening.id, motherId: motherData.fileNumber });
+    addAuditLog('SCREENING_STARTED', { 
+      screeningId: newScreening.id, 
+      fileNumber: standardizedMother.fileNumber,
+      patientName: standardizedMother.name 
+    });
     return newScreening;
   };
 
-  const updateAnswer = (questionId, value) => {
-    if (!currentScreening) return;
+  /**
+   * Atomic answer submission and advance.
+   * Eliminates the Question 10 race condition (Defect B1).
+   * 
+   * @param {number} questionId - item number 1 to 10
+   * @param {number} value - score 0 to 3
+   * @returns {Object} updated or completed screening
+   */
+  const answerAndAdvance = (questionId, value) => {
+    if (!currentScreening) return null;
 
     const updatedAnswers = {
       ...currentScreening.answers,
       [questionId]: value
     };
 
-    const updatedScreening = {
-      ...currentScreening,
-      answers: updatedAnswers,
-      syncStatus: 'pending'
-    };
-
-    setCurrentScreening(updatedScreening);
-  };
-
-  const nextQuestion = () => {
-    if (!currentScreening) return null;
-
     if (currentScreening.currentQuestion < 10) {
-      const updated = {
+      const nextQuestionNum = currentScreening.currentQuestion + 1;
+      const updatedScreening = {
         ...currentScreening,
-        currentQuestion: currentScreening.currentQuestion + 1
+        answers: updatedAnswers,
+        currentQuestion: nextQuestionNum,
+        syncStatus: 'pending'
       };
-      setCurrentScreening(updated);
-      return updated;
+      setCurrentScreening(updatedScreening);
+      return updatedScreening;
     }
 
-    const score = calculateScore(currentScreening.answers);
-    const riskTier = getRiskTier(score);
-    const selfHarmRisk = hasSelfHarmRisk(currentScreening.answers);
-
-    let referralActions = [];
-    if (selfHarmRisk || score >= 13) {
-      referralActions = [
-        "URGENT: Refer to Facility Supervisor same day",
-        "Immediate mental health specialist consultation required",
-        "Ensure mother is not left alone if Item-10 positive",
-        "Activate emergency contact protocol",
-        "Document and track referral completion"
-      ];
-    } else if (score >= 9) {
-      referralActions = [
-        "Refer to Facility Supervisor for assessment within 1 week",
-        "Provide counseling on stress management",
-        "Consider peer support group referral",
-        "Monitor closely with weekly check-ins",
-        "Educate family members on supporting the mother"
-      ];
-    } else {
-      referralActions = [
-        "Continue routine postnatal care",
-        "Provide psychoeducation on normal postpartum adjustments",
-        "Schedule follow-up in 4-6 weeks",
-        "Encourage family support systems"
-      ];
-    }
+    // Question 10 answered - compute final clinical scores atomically
+    const score = scoreEpds(updatedAnswers);
+    const riskTier = classifyRisk(score);
+    const escalation = isEscalation(updatedAnswers);
+    const plan = getReferralPlan(score, updatedAnswers);
 
     const completedScreening = {
       ...currentScreening,
+      answers: updatedAnswers,
       completed: true,
       score,
       riskTier,
-      hasSelfHarmRisk: selfHarmRisk,
-      referralActions,
-      status: selfHarmRisk || score >= 13 ? 'urgent_referral' : score >= 9 ? 'referral_needed' : 'completed',
+      hasSelfHarmRisk: escalation,
+      referralPlan: plan,
+      referralActions: plan.actions,
+      status: escalation || score >= 13 ? 'urgent_referral' : score >= 9 ? 'referral_needed' : 'completed',
       completedAt: new Date().toISOString(),
-      syncStatus: 'pending'
+      syncStatus: 'pending',
+      selfHarmAcknowledged: false,
+      referralOutcome: 'pending'
     };
 
     setScreenings(prev => [completedScreening, ...prev]);
     setCurrentScreening(completedScreening);
-    addAuditLog('SCREENING_COMPLETED', { 
-      screeningId: completedScreening.id, 
-      score, 
+    localStorage.removeItem('maternawell_active_draft');
+
+    addAuditLog('SCREENING_COMPLETED', {
+      screeningId: completedScreening.id,
+      fileNumber: completedScreening.motherData.fileNumber,
+      score,
       riskTier: riskTier.label,
-      hasSelfHarmRisk: selfHarmRisk 
+      hasSelfHarmRisk: escalation
     });
+
+    if (escalation) {
+      addAuditLog('SELF_HARM_ESCALATION_TRIGGERED', {
+        screeningId: completedScreening.id,
+        fileNumber: completedScreening.motherData.fileNumber,
+        item10Score: updatedAnswers[10]
+      });
+    }
+
     return completedScreening;
   };
 
   const previousQuestion = () => {
-    if (!currentScreening) return null;
-
-    if (currentScreening.currentQuestion > 1) {
-      const updated = {
-        ...currentScreening,
-        currentQuestion: currentScreening.currentQuestion - 1
-      };
-      setCurrentScreening(updated);
-      return updated;
+    if (!currentScreening || currentScreening.currentQuestion <= 1) {
+      return currentScreening;
     }
-    return currentScreening;
+
+    const updated = {
+      ...currentScreening,
+      currentQuestion: currentScreening.currentQuestion - 1
+    };
+    setCurrentScreening(updated);
+    return updated;
   };
 
   const resetCurrentScreening = () => {
     setCurrentScreening(null);
+    localStorage.removeItem('maternawell_active_draft');
   };
 
-  const saveReferralOutcome = (screeningId, outcome) => {
+  const saveReferralOutcome = (screeningId, outcome, notes = '') => {
     setScreenings(prev => prev.map(s => 
       s.id === screeningId 
         ? { 
             ...s, 
             referralOutcome: outcome, 
             referralOutcomeDate: new Date().toISOString(),
-            status: outcome === 'completed' ? 'completed' : s.status
+            referralNotes: notes,
+            status: outcome === 'completed' ? 'completed' : s.status,
+            syncStatus: 'pending'
           }
         : s
     ));
-    addAuditLog('REFERRAL_OUTCOME_SAVED', { screeningId, outcome });
+    addAuditLog('REFERRAL_OUTCOME_SAVED', { screeningId, outcome, notes });
   };
 
   const updateScreeningStatus = (screeningId, status) => {
     setScreenings(prev => prev.map(s => 
       s.id === screeningId 
-        ? { ...s, status, updatedAt: new Date().toISOString() }
+        ? { ...s, status, updatedAt: new Date().toISOString(), syncStatus: 'pending' }
         : s
     ));
     addAuditLog('SCREENING_STATUS_UPDATED', { screeningId, status });
   };
 
   const acknowledgeSelfHarmFlag = (screeningId, supervisorNotes) => {
+    const user = getCurrentUser();
+    const ackBy = user?.staffId || user?.name || 'Facility Supervisor';
+
     setScreenings(prev => prev.map(s => 
       s.id === screeningId 
         ? { 
@@ -211,89 +281,65 @@ export const ScreeningProvider = ({ children }) => {
             selfHarmAcknowledged: true,
             selfHarmAcknowledgedAt: new Date().toISOString(),
             supervisorNotes,
-            acknowledgedBy: localStorage.getItem('maternawell_user')?.id
+            acknowledgedBy: ackBy,
+            syncStatus: 'pending'
           }
         : s
     ));
-    addAuditLog('SELF_HARM_FLAG_ACKNOWLEDGED', { screeningId, supervisorNotes });
-  };
-
-  const performSync = async () => {
-    const pendingScreenings = screenings.filter(s => s.syncStatus === 'pending');
-    if (pendingScreenings.length === 0) return;
-
-    try {
-      // Simulate API sync
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setScreenings(prev => prev.map(s => 
-        s.syncStatus === 'pending' ? { ...s, syncStatus: 'synced', syncedAt: new Date().toISOString() } : s
-      ));
-      
-      setLastSyncTime(new Date().toISOString());
-      addAuditLog('DATA_SYNCED', { count: pendingScreenings.length });
-    } catch (error) {
-      console.error('Sync failed:', error);
-      addAuditLog('SYNC_FAILED', { error: error.message });
-    }
+    addAuditLog('SELF_HARM_FLAG_ACKNOWLEDGED', { screeningId, supervisorNotes, acknowledgedBy: ackBy });
   };
 
   const createAnonymousScreening = (motherData, answers) => {
-    const score = calculateScore(answers);
-    const riskTier = getRiskTier(score);
-    const selfHarmRisk = hasSelfHarmRisk(answers);
+    const score = scoreEpds(answers);
+    const riskTier = classifyRisk(score);
+    const selfHarm = isEscalation(answers);
+    const plan = getReferralPlan(score, answers);
 
-    let referralActions = [];
-    if (selfHarmRisk || score >= 13) {
-      referralActions = [
-        "URGENT: Contact mental health hotline immediately",
-        "Visit nearest health facility",
-        "Tell a trusted family member or friend",
-        "Call emergency services if in immediate danger"
-      ];
-    } else if (score >= 9) {
-      referralActions = [
-        "Schedule appointment with health worker",
-        "Join peer support group",
-        "Practice self-care activities",
-        "Talk to someone you trust"
-      ];
-    } else {
-      referralActions = [
-        "Continue self-care practices",
-        "Maintain social connections",
-        "Attend routine postnatal checkups"
-      ];
-    }
+    const anonymousCode = `MW-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
     const anonymousScreening = {
       id: `anon_${Date.now()}`,
-      motherData: { ...motherData, isAnonymous: true },
+      anonymousCode,
+      motherData: { 
+        ...motherData, 
+        name: 'Anonymous Mother',
+        isAnonymous: true,
+        fileNumber: anonymousCode
+      },
       answers,
       completed: true,
       score,
       riskTier,
-      hasSelfHarmRisk: selfHarmRisk,
-      referralActions,
-      status: selfHarmRisk || score >= 13 ? 'urgent_referral' : score >= 9 ? 'referral_needed' : 'completed',
+      hasSelfHarmRisk: selfHarm,
+      referralPlan: plan,
+      referralActions: plan.actions,
+      status: selfHarm || score >= 13 ? 'urgent_referral' : score >= 9 ? 'referral_needed' : 'completed',
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       isAnonymous: true,
-      syncStatus: 'pending'
+      syncStatus: 'pending',
+      selfHarmAcknowledged: false,
+      referralOutcome: 'pending'
     };
 
     setScreenings(prev => [anonymousScreening, ...prev]);
-    addAuditLog('ANONYMOUS_SCREENING_CREATED', { score, riskTier: riskTier.label });
+    addAuditLog('ANONYMOUS_SCREENING_CREATED', {
+      anonymousCode,
+      score,
+      riskTier: riskTier.label,
+      hasSelfHarmRisk: selfHarm
+    });
+
     return anonymousScreening;
   };
 
   const getStats = () => {
     const total = screenings.length;
-    const lowRisk = screenings.filter(s => s.riskTier?.label === 'Low Risk').length;
-    const moderateRisk = screenings.filter(s => s.riskTier?.label === 'Moderate Risk').length;
-    const highRisk = screenings.filter(s => s.riskTier?.label === 'High Risk').length;
-    const urgentReferrals = screenings.filter(s => s.hasSelfHarmRisk).length;
-    const referralsCompleted = screenings.filter(s => s.referralOutcome).length;
+    const lowRisk = screenings.filter(s => s.riskTier?.tier === 'low' || s.riskTier?.label === 'Low Risk').length;
+    const moderateRisk = screenings.filter(s => s.riskTier?.tier === 'moderate' || s.riskTier?.label === 'Moderate Risk').length;
+    const highRisk = screenings.filter(s => s.riskTier?.tier === 'high' || s.riskTier?.label === 'High Risk').length;
+    const urgentReferrals = screenings.filter(s => s.hasSelfHarmRisk || (s.score !== null && s.score >= 13)).length;
+    const referralsCompleted = screenings.filter(s => s.referralOutcome === 'completed').length;
     const pendingAcknowledgments = screenings.filter(s => s.hasSelfHarmRisk && !s.selfHarmAcknowledged).length;
 
     return { 
@@ -323,8 +369,7 @@ export const ScreeningProvider = ({ children }) => {
     isOnline,
     lastSyncTime,
     startScreening,
-    updateAnswer,
-    nextQuestion,
+    answerAndAdvance,
     previousQuestion,
     resetCurrentScreening,
     saveReferralOutcome,
