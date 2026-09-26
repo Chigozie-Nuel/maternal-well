@@ -1,130 +1,55 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  generateSalt,
-  deriveKey,
-  encryptData,
-  decryptData,
-  encryptScreeningRecord,
-  decryptScreeningRecord,
-  setSessionKey,
-  getSessionKey,
-  lockSession,
-  wipeSession,
-  isSessionLocked
-} from '../utils/crypto';
+import { describe, it, expect } from 'vitest';
+import { createKeyCheck, decryptData, deriveKey, encryptData, generateSalt, getSessionKey, lockSession, setSessionKey, verifyKeyCheck, wipeSession } from '../utils/crypto';
 
-describe('Web Crypto AES-GCM Encryption Module', () => {
-  const password = 'CorrectPassword123!';
-  const wrongPassword = 'WrongPassword456!';
-  let salt;
-  let validKey;
-  let wrongKey;
-
-  beforeEach(async () => {
-    wipeSession();
-    salt = generateSalt();
-    validKey = await deriveKey(password, salt);
-    wrongKey = await deriveKey(wrongPassword, salt);
+describe('Encryption at rest (NFR-8)', () => {
+  it('generates distinct 16-byte salts', () => {
+    const a = generateSalt();
+    expect(atob(a)).toHaveLength(16);
+    expect(generateSalt()).not.toBe(a);
   });
 
-  it('generates a 16-byte base64 salt', () => {
-    expect(salt).toBeDefined();
-    expect(typeof salt).toBe('string');
-    // Base64 of 16 bytes is 24 chars with padding
-    expect(salt.length).toBe(24);
+  it('derives a non-extractable AES-GCM key', async () => {
+    const key = await deriveKey('Worker01!2026', generateSalt());
+    expect(key.algorithm.name).toBe('AES-GCM');
+    expect(key.extractable).toBe(false);
   });
 
-  it('derives a valid CryptoKey with AES-GCM algorithm', () => {
-    expect(validKey).toBeDefined();
-    expect(validKey.algorithm.name).toBe('AES-GCM');
-    expect(validKey.algorithm.length).toBe(256);
-    expect(validKey.usages).toContain('encrypt');
-    expect(validKey.usages).toContain('decrypt');
-  });
-
-  it('performs an encrypt/decrypt round trip on a string', async () => {
-    const plainText = 'Amina Bello (08012345678)';
-    const envelope = await encryptData(plainText, validKey);
-
+  it('round-trips structured records and never stores plaintext', async () => {
+    const key = await deriveKey('pw', generateSalt());
+    const record = { motherData: { name: 'Amina Bello' }, answers: { 10: 2 } };
+    const envelope = await encryptData(record, key);
     expect(envelope.startsWith('MW1:')).toBe(true);
-    expect(envelope).not.toContain(plainText);
-
-    const decrypted = await decryptData(envelope, validKey);
-    expect(decrypted).toBe(plainText);
+    expect(envelope).not.toContain('Amina');
+    expect(await decryptData(envelope, key)).toEqual(record);
   });
 
-  it('performs an encrypt/decrypt round trip on structured objects', async () => {
-    const originalAnswers = { 1: 0, 2: 1, 3: 2, 4: 0, 5: 3, 10: 1 };
-    const envelope = await encryptData(originalAnswers, validKey);
-
-    expect(envelope.startsWith('MW1:')).toBe(true);
-
-    const decrypted = await decryptData(envelope, validKey);
-    expect(decrypted).toEqual(originalAnswers);
+  it('uses a fresh IV for every encryption', async () => {
+    const key = await deriveKey('pw', generateSalt());
+    expect(await encryptData('same', key)).not.toBe(await encryptData('same', key));
   });
 
-  it('fails decryption and throws when given a wrong key (wrong password)', async () => {
-    const sensitiveData = 'High-risk patient clinical notes';
-    const envelope = await encryptData(sensitiveData, validKey);
-
-    await expect(decryptData(envelope, wrongKey)).rejects.toThrow(
-      'Decryption failed: invalid key or corrupted data.'
-    );
+  it('rejects the wrong password', async () => {
+    const salt = generateSalt();
+    const envelope = await encryptData({ secret: true }, await deriveKey('right', salt));
+    await expect(decryptData(envelope, await deriveKey('wrong', salt))).rejects.toThrow(/Decryption failed/);
   });
 
-  it('encrypts and decrypts sensitive fields in a full screening record', async () => {
-    const record = {
-      id: 'screening-001',
-      facilityId: 'phc-ikeja',
-      workerId: 'hw-001',
-      score: 11,
-      riskTier: 'Moderate Risk',
-      hasSelfHarmRisk: false,
-      motherData: {
-        name: 'Funke Akindele',
-        phone: '08099887766',
-        fileNumber: 'MW-4821'
-      },
-      notes: 'Patient reports severe insomnia since birth.',
-      answers: { 1: 1, 2: 2, 3: 1, 10: 0 }
-    };
-
-    const encrypted = await encryptScreeningRecord(record, validKey);
-
-    expect(encrypted._isEncrypted).toBe(true);
-    expect(encrypted.motherData.name).toMatch(/^MW1:/);
-    expect(encrypted.motherData.phone).toMatch(/^MW1:/);
-    expect(encrypted.motherData.fileNumber).toMatch(/^MW1:/);
-    expect(encrypted.notes).toMatch(/^MW1:/);
-    expect(encrypted.answers).toMatch(/^MW1:/);
-    // Non-PII fields remain plaintext for fast indexing/filtering
-    expect(encrypted.score).toBe(11);
-    expect(encrypted.riskTier).toBe('Moderate Risk');
-
-    const decrypted = await decryptScreeningRecord(encrypted, validKey);
-
-    expect(decrypted._isEncrypted).toBe(false);
-    expect(decrypted.motherData.name).toBe('Funke Akindele');
-    expect(decrypted.motherData.phone).toBe('08099887766');
-    expect(decrypted.motherData.fileNumber).toBe('MW-4821');
-    expect(decrypted.notes).toBe('Patient reports severe insomnia since birth.');
-    expect(decrypted.answers).toEqual({ 1: 1, 2: 2, 3: 1, 10: 0 });
+  it('verifies a password offline with the key check (no hash stored)', async () => {
+    const salt = generateSalt();
+    const check = await createKeyCheck(await deriveKey('right', salt));
+    expect(await verifyKeyCheck(check, await deriveKey('right', salt))).toBe(true);
+    expect(await verifyKeyCheck(check, await deriveKey('wrong', salt))).toBe(false);
   });
 
-  it('manages session key lifecycle and idle lock state', () => {
-    expect(isSessionLocked()).toBe(false);
-    expect(getSessionKey()).toBe(null);
-
-    setSessionKey(validKey, salt);
-    expect(getSessionKey()).toBe(validKey);
-    expect(isSessionLocked()).toBe(false);
-
+  it('locking clears the in-memory key and announces the lock', async () => {
+    const key = await deriveKey('pw', generateSalt());
+    setSessionKey(key);
+    expect(getSessionKey()).toBe(key);
+    let announced = false;
+    window.addEventListener('maternawell:locked', () => { announced = true; }, { once: true });
     lockSession();
-    expect(isSessionLocked()).toBe(true);
-    expect(getSessionKey()).toBe(null);
-
+    expect(getSessionKey()).toBeNull();
+    expect(announced).toBe(true);
     wipeSession();
-    expect(isSessionLocked()).toBe(false);
-    expect(getSessionKey()).toBe(null);
   });
 });

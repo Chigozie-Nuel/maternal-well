@@ -1,21 +1,65 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CheckCircle, AlertTriangle, AlertCircle, ArrowRight, Download, MapPin, ShieldAlert, Phone } from 'lucide-react';
+import { CheckCircle, AlertTriangle, AlertCircle, ArrowRight, Download, MapPin, ShieldAlert, Phone, ClipboardList } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
+import { useAuth } from '../context/AuthContext';
 import { FACILITIES } from '../utils/constants';
 import { CRISIS_CONTACTS, STATUTORY_DISCLAIMER } from '../config/crisisContacts';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { format } from 'date-fns';
+import { exportCasePdf } from '../utils/pdf';
+import { Modal } from '../components/ui';
+
+/**
+ * Item-10 safety modal (NFR-4). It has no close button and no escape route: the health worker
+ * must confirm both safety steps. The flag itself stays open until a supervisor acknowledges it.
+ */
+function SafetyConfirmModal({ screening, onConfirm }) {
+  const [notLeftAlone, setNotLeftAlone] = useState(false);
+  const [supervisorInformed, setSupervisorInformed] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const confirm = async () => {
+    setBusy(true);
+    try { await onConfirm(); }
+    catch (err) { setError(err.message); setBusy(false); }
+  };
+  return (
+    <Modal title="Same-day escalation: the mother reported thoughts of self-harm" dismissible={false} tone="danger" labelledBy="safety-title">
+      <p className="mb-3 text-sm text-slate-700">
+        Item 10 was answered “{['Never', 'Hardly ever', 'Sometimes', 'Yes, quite often'][screening.answers?.[10]] || 'above zero'}”.
+        This needs action today regardless of the total score of {screening.score}.
+      </p>
+      <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-slate-800">
+        <li>Stay with the mother, or make sure a colleague or trusted relative stays with her.</li>
+        <li>Inform the facility supervisor now, in person or by phone.</li>
+        <li>Follow the facility's emergency pathway for an immediate psychiatric referral.</li>
+      </ol>
+      <label className="mb-2 flex min-h-[44px] items-start gap-3 text-sm font-semibold"><input type="checkbox" className="mt-1 h-5 w-5" checked={notLeftAlone} onChange={event => setNotLeftAlone(event.target.checked)} /> The mother is not alone and will not leave the facility alone.</label>
+      <label className="mb-4 flex min-h-[44px] items-start gap-3 text-sm font-semibold"><input type="checkbox" className="mt-1 h-5 w-5" checked={supervisorInformed} onChange={event => setSupervisorInformed(event.target.checked)} /> I have informed the facility supervisor.</label>
+      <p className="mb-4 text-xs text-slate-600">The case is already in the supervisor's queue. It stays flagged until the supervisor acknowledges it in the app.</p>
+      {error && <p role="alert" className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-800">{error}</p>}
+      <button type="button" className="btn btn-danger btn-block" disabled={!notLeftAlone || !supervisorInformed || busy} onClick={confirm}>Confirm safety steps</button>
+    </Modal>
+  );
+}
 
 const Results = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { screenings, currentScreening } = useScreening();
+  const { getScreeningById, confirmSafety, loaded } = useScreening();
+  const { user } = useAuth();
+  const screening = getScreeningById(id);
+  const safetyPending = Boolean(screening?.hasSelfHarmRisk && !screening.workerSafetyConfirmation && user?.role === 'health_worker');
 
-  const screening = screenings.find(s => s.id === id) || (currentScreening?.id === id ? currentScreening : null);
+  useEffect(() => {
+    if (!safetyPending) return undefined;
+    const warn = event => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [safetyPending]);
 
   if (!screening || !screening.completed) {
+    if (!loaded) return <p className="p-10 text-center text-slate-600">Loading…</p>;
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <h2>No completed screening record found</h2>
@@ -52,71 +96,7 @@ const Results = () => {
     : (screening.motherData?.name || screening.motherData?.motherName || 'Unnamed Patient');
   const fileNumber = screening.motherData?.fileNumber || screening.id;
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
-    
-    doc.setFillColor(46, 125, 50);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.text('Maternawell Nigeria - Clinical Screening Report', 105, 14, { align: 'center' });
-    doc.setFontSize(11);
-    doc.text('Edinburgh Postnatal Depression Scale (EPDS) • Nigerian Cutoff >= 9', 105, 23, { align: 'center' });
-    
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(13);
-    doc.text('Patient Demographics', 14, 42);
-    
-    const patientData = [
-      ['File / ID Number:', fileNumber],
-      ['Patient Name:', patientName],
-      ['Age / Postpartum:', `${screening.motherData?.age || 'N/A'} yrs • ${screening.motherData?.weeksPostpartum || 'N/A'} weeks postpartum`],
-      ['Phone Number:', screening.motherData?.phone || screening.motherData?.phoneNumber || 'N/A'],
-      ['Screening Timestamp:', format(new Date(screening.completedAt || Date.now()), 'PPP p')]
-    ];
-    
-    autoTable(doc, {
-      startY: 46,
-      body: patientData,
-      theme: 'plain',
-      styles: { fontSize: 10, cellPadding: 2 },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } }
-    });
-    
-    const finalY = doc.lastAutoTable.finalY + 8;
-    doc.setFontSize(13);
-    doc.text('Assessment & Classification', 14, finalY);
-    
-    doc.setFontSize(11);
-    doc.text(`EPDS Total Score: ${screening.score} / 30`, 14, finalY + 8);
-    doc.text(`Risk Tier: ${screening.riskTier?.label || 'N/A'}`, 14, finalY + 15);
-    
-    if (screening.hasSelfHarmRisk) {
-      doc.setTextColor(220, 38, 38);
-      doc.setFont(undefined, 'bold');
-      doc.text('CRITICAL: Item 10 Self-Harm Ideation Reported (Mandatory Same-Day Escalation)', 14, finalY + 22);
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(0, 0, 0);
-    }
-    
-    const actionsY = finalY + (screening.hasSelfHarmRisk ? 32 : 24);
-    doc.setFontSize(13);
-    doc.text('Stepped-Care Referral Recommendations', 14, actionsY);
-    
-    doc.setFontSize(10);
-    actions.forEach((action, index) => {
-      doc.text(`• ${action}`, 14, actionsY + 7 + (index * 6.5));
-    });
-    
-    doc.setFontSize(9);
-    doc.setTextColor(198, 40, 40);
-    doc.text(STATUTORY_DISCLAIMER, 105, 274, { align: 'center' });
-    
-    doc.setTextColor(128, 128, 128);
-    doc.text(`Generated under MeHPriC Protocol • Confidential Health Record • ${format(new Date(), 'PPP p')}`, 105, 282, { align: 'center' });
-    
-    doc.save(`maternawell_${fileNumber}.pdf`);
-  };
+  const handleExportPDF = () => exportCasePdf(screening);
 
   return (
     <div style={{
@@ -130,6 +110,7 @@ const Results = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
+          {safetyPending && <SafetyConfirmModal screening={screening} onConfirm={() => confirmSafety(screening.id)} />}
           {/* Statutory Disclaimer Banner (NFR-5) */}
           <div style={{
             background: '#FFF8E1',
@@ -247,7 +228,16 @@ const Results = () => {
                   </p>
                   <div style={{ fontSize: '12px', color: '#C62828', fontWeight: '600' }}>
                     Status: {screening.selfHarmAcknowledged ? '✓ Acknowledged by Supervisor' : '⚠ Action required by Facility Supervisor today'}
+                    {screening.escalationDueBy && !screening.selfHarmAcknowledged && ` (due by ${new Date(screening.escalationDueBy).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })})`}
                   </div>
+                  <ul className="mt-3 space-y-1 text-sm text-red-950">
+                    {CRISIS_CONTACTS.map(contact => (
+                      <li key={contact.id} className="flex flex-wrap items-center gap-2">
+                        <Phone size={14} aria-hidden="true" /> <strong>{contact.name}:</strong>
+                        {contact.verified ? <a href={`tel:${contact.phone}`} className="underline">{contact.phone}</a> : <span className="italic">number pending verification</span>}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>
@@ -358,6 +348,9 @@ const Results = () => {
               Export Medical PDF
             </motion.button>
             
+            <Link to={`/cases/${screening.id}`} className="btn btn-secondary" style={{ flex: 1, minWidth: '180px' }}>
+              <ClipboardList size={18} aria-hidden="true" /> Record referral follow-up
+            </Link>
             <motion.button
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}

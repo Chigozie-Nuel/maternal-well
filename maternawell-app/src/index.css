@@ -383,3 +383,22 @@ input, textarea, select {
 .mt-2 { margin-top: 16px; }
 .mt-3 { margin-top: 24px; }
 .mt-4 { margin-top: 32px; }
+
+/* ---- Accessibility: touch targets, contrast, focus (SRS 3.1, 5.4) ---- */
+.btn { min-height: 48px; }
+.btn-primary { background: linear-gradient(135deg, var(--primary-color), var(--primary-dark)); color: white; }
+.btn-danger { background: #C62828; }
+.btn-danger:hover { background: #B71C1C; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.input-field { min-height: 48px; background: white; }
+:focus-visible { outline: 3px solid #1565C0; outline-offset: 2px; }
+.sidebar-nav-item { text-decoration: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  .dashboard-shell { display: block; }
+}

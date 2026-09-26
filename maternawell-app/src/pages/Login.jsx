@@ -1,297 +1,116 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { LogIn, Shield, Heart, UserCheck, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, Heart, KeyRound, Loader2, UserRound, WifiOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { FACILITIES } from '../utils/constants';
-import { deriveKey, generateSalt, setSessionKey } from '../utils/crypto';
+import { LanguageSelector, useLanguage } from '../context/LanguageContext';
+
+export const homeFor = role => (role === 'supervisor' ? '/supervisor' : role === 'admin' ? '/admin' : '/dashboard');
+
+// Seeded prototype accounts (server/README.md). Remove this list for a real deployment.
+const DEMO_ACCOUNTS = [
+  ['HW-01', 'Worker01!2026', 'Health worker · Ikeja PHC'],
+  ['SUP-01', 'Supervisor01!2026', 'Supervisor · Ikeja PHC'],
+  ['ADMIN-01', 'Admin01!2026', 'Administrator · Ikeja PHC'],
+  ['HW-02', 'Worker02!2026', 'Health worker · Surulere PHC']
+];
+
+export function AuthCard({ title, subtitle, children }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-800 to-green-950 p-4">
+      <div className="card w-full max-w-md p-6 sm:p-9">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-green-700 to-green-500 shadow-lg">
+            <Heart size={32} color="white" aria-hidden="true" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-slate-900">{title}</h1>
+          <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [formData, setFormData] = useState({
-    staffId: '',
-    password: '',
-    facilityName: FACILITIES[0]?.name || '',
-    role: 'health_worker'
-  });
+  const { t } = useLanguage();
+  const [staffId, setStaffId] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!formData.staffId || !formData.password || !formData.facilityName) {
-      setError('Please fill in all credentials and facility selection');
-      return;
-    }
-
+  const handleSubmit = async event => {
+    event.preventDefault();
+    setError('');
+    setBusy(true);
     try {
-      // Derive session crypto key from password via PBKDF2 (>= 210,000 iterations)
-      let salt = localStorage.getItem(`maternawell_salt_${formData.staffId}`);
-      if (!salt) {
-        salt = generateSalt();
-        localStorage.setItem(`maternawell_salt_${formData.staffId}`, salt);
-      }
-      const cryptoKey = await deriveKey(formData.password, salt);
-      setSessionKey(cryptoKey, salt);
-
-      const user = {
-        id: formData.staffId,
-        staffId: formData.staffId,
-        name: formData.role === 'supervisor' ? `Supervisor ${formData.staffId}` : `Health Worker ${formData.staffId}`,
-        facility: formData.facilityName,
-        role: formData.role,
-        loginTime: new Date().toISOString()
-      };
-
-      login(user);
-      if (formData.role === 'supervisor') {
-        navigate('/supervisor');
-      } else {
-        navigate('/dashboard');
-      }
+      const user = await login(staffId, password);
+      navigate(homeFor(user.role), { replace: true });
     } catch (err) {
-      setError('Key derivation failed: ' + err.message);
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #2E7D32 0%, #1B5E20 100%)',
-      padding: '20px'
-    }}>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="card"
-        style={{
-          width: '100%',
-          maxWidth: '460px',
-          padding: '36px'
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
-            style={{
-              width: '72px',
-              height: '72px',
-              background: 'linear-gradient(135deg, #2E7D32, #4CAF50)',
-              borderRadius: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              boxShadow: '0 8px 16px rgba(46, 125, 50, 0.25)'
-            }}
-          >
-            <Heart size={36} color="white" />
-          </motion.div>
-          
-          <h1 style={{
-            fontSize: '26px',
-            fontWeight: '800',
-            color: '#212121',
-            marginBottom: '4px'
-          }}>
-            Maternawell Nigeria
-          </h1>
-          <p style={{ color: '#757575', fontSize: '13px' }}>
-            Primary Health Centre EPDS Screening & Stepped-Care
-          </p>
-        </div>
-
-        {/* Role Switcher */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px',
-          padding: '4px',
-          background: '#F1F3F4',
-          borderRadius: '12px',
-          marginBottom: '20px'
-        }}>
-          <button
-            type="button"
-            onClick={() => setFormData({ ...formData, role: 'health_worker' })}
-            style={{
-              padding: '10px',
-              border: 'none',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              background: formData.role === 'health_worker' ? 'white' : 'transparent',
-              color: formData.role === 'health_worker' ? '#2E7D32' : '#757575',
-              boxShadow: formData.role === 'health_worker' ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <UserCheck size={16} />
-            Health Worker
-          </button>
-          <button
-            type="button"
-            onClick={() => setFormData({ ...formData, role: 'supervisor' })}
-            style={{
-              padding: '10px',
-              border: 'none',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              background: formData.role === 'supervisor' ? 'white' : 'transparent',
-              color: formData.role === 'supervisor' ? '#2E7D32' : '#757575',
-              boxShadow: formData.role === 'supervisor' ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <ShieldCheck size={16} />
-            Supervisor
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div className="input-group">
-            <label className="input-label">Primary Health Centre *</label>
-            <select
-              className="input-field"
-              value={formData.facilityName}
-              onChange={(e) => setFormData({ ...formData, facilityName: e.target.value })}
-              style={{ cursor: 'pointer' }}
-              required
-            >
-              {FACILITIES.map(fac => (
-                <option key={fac.id} value={fac.name}>
-                  {fac.name} ({fac.lga || fac.location})
-                </option>
-              ))}
-            </select>
+    <AuthCard title="Maternawell Nigeria" subtitle="Postnatal depression screening and referral for Primary Health Centres">
+      {offline && (
+        <p className="mb-4 flex items-center gap-2 rounded-xl bg-slate-100 p-3 text-sm text-slate-700">
+          <WifiOff size={16} aria-hidden="true" /> You are offline. You can sign in if you have signed in on this device before.
+        </p>
+      )}
+      <form onSubmit={handleSubmit} noValidate>
+        <div className="input-group">
+          <label className="input-label" htmlFor="staffId">Staff ID</label>
+          <div className="relative">
+            <UserRound size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+            <input id="staffId" className="input-field !pl-11" autoComplete="username" autoCapitalize="characters" placeholder="e.g. HW-01"
+              value={staffId} onChange={event => setStaffId(event.target.value)} required />
           </div>
-
-          <div className="input-group">
-            <label className="input-label">Staff ID *</label>
-            <div style={{ position: 'relative' }}>
-              <LogIn 
-                size={18} 
-                color="#757575" 
-                style={{ 
-                  position: 'absolute', 
-                  left: '16px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)' 
-                }} 
-              />
-              <input
-                type="text"
-                className="input-field"
-                placeholder={formData.role === 'supervisor' ? 'e.g. SUP-01' : 'e.g. HW-01'}
-                value={formData.staffId}
-                onChange={(e) => setFormData({ ...formData, staffId: e.target.value })}
-                style={{ paddingLeft: '46px' }}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label className="input-label">Password *</label>
-            <div style={{ position: 'relative' }}>
-              <Shield 
-                size={18} 
-                color="#757575" 
-                style={{ 
-                  position: 'absolute', 
-                  left: '16px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)' 
-                }} 
-              />
-              <input
-                type="password"
-                className="input-field"
-                placeholder="Enter password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                style={{ paddingLeft: '46px' }}
-                required
-              />
-            </div>
-          </div>
-
-          {error && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              style={{
-                color: '#EF5350',
-                fontSize: '13px',
-                marginBottom: '16px',
-                textAlign: 'center'
-              }}
-            >
-              {error}
-            </motion.p>
-          )}
-
-          <motion.button
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.99 }}
-            type="submit"
-            className="btn btn-primary btn-block"
-            style={{
-              padding: '14px',
-              fontSize: '15px',
-              fontWeight: '700'
-            }}
-          >
-            Sign In to Facility Portal
-          </motion.button>
-        </form>
-
-        {/* Anonymous Self-Referral Portal Link */}
-        <div style={{
-          marginTop: '24px',
-          paddingTop: '20px',
-          borderTop: '1px solid #EEEEEE',
-          textAlign: 'center'
-        }}>
-          <p style={{ fontSize: '13px', color: '#616161', marginBottom: '10px' }}>
-            Are you a new or expecting mother checking your own well-being?
-          </p>
-          <Link
-            to="/self-referral"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: '#2E7D32',
-              fontWeight: '700',
-              fontSize: '14px',
-              textDecoration: 'none'
-            }}
-          >
-            <span>Take Private Anonymous Self-Check</span>
-            <ArrowRight size={16} />
-          </Link>
         </div>
-      </motion.div>
-    </div>
+        <div className="input-group">
+          <label className="input-label" htmlFor="password">Password</label>
+          <div className="relative">
+            <KeyRound size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+            <input id="password" type="password" className="input-field !pl-11" autoComplete="current-password"
+              value={password} onChange={event => setPassword(event.target.value)} required />
+          </div>
+        </div>
+        {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-center text-sm font-semibold text-red-800">{error}</p>}
+        <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+          {busy ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in…</> : t('signIn')}
+        </button>
+      </form>
+
+      <details className="mt-5 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+        <summary className="cursor-pointer font-semibold">Prototype demo accounts</summary>
+        <table className="mt-2 w-full text-left text-xs">
+          <tbody>
+            {DEMO_ACCOUNTS.map(([id, pass, role]) => (
+              <tr key={id}>
+                <td className="py-1 pr-2"><button type="button" className="font-mono font-bold text-green-800 underline" onClick={() => { setStaffId(id); setPassword(pass); }}>{id}</button></td>
+                <td className="py-1 pr-2 font-mono">{pass}</td>
+                <td className="py-1">{role}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+
+      <div className="mt-6 border-t border-slate-200 pt-5 text-center">
+        <p className="mb-2 text-sm text-slate-600">Are you a new mother? Check privately how you have been feeling.</p>
+        <Link to="/self-referral" className="inline-flex min-h-[44px] items-center gap-2 font-bold text-green-800">
+          {t('selfCheck')} <ArrowRight size={16} aria-hidden="true" />
+        </Link>
+        <div className="mt-3 flex items-center justify-center gap-4">
+          <LanguageSelector />
+          <Link to="/help" className="font-semibold text-green-800 underline">{t('help')}</Link>
+        </div>
+      </div>
+    </AuthCard>
   );
 };
 

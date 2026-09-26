@@ -1,90 +1,54 @@
-import { useState, useEffect } from 'react';
-import { Wifi, WifiOff, RefreshCw, CheckCircle2, Clock, CloudOff } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, CloudOff, KeyRound, RefreshCw, WifiOff } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
-import { isServerReachable } from '../db/sync';
+import { lockSession } from '../utils/crypto';
+import { Modal } from './ui';
 
+const time = value => (value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'never');
+
+/** Online/offline badge, pending count, last sync time and "Sync now" (FR-9, SRS FAQ "did my data sync?"). */
 export default function SyncStatusChip() {
-  const { isOnline, pendingSyncCount, lastSyncTime, performSync, isSyncing } = useScreening();
-  const [justSynced, setJustSynced] = useState(false);
-  const serverUp = isServerReachable();
+  const { isOnline, sync, performSync, retryFailedSync } = useScreening();
+  const [showFailed, setShowFailed] = useState(false);
+  const failed = sync.failed || [];
 
-  const handleSyncClick = async (e) => {
-    e.stopPropagation();
-    if (!isOnline || isSyncing) return;
-    await performSync();
-    setJustSynced(true);
-    setTimeout(() => setJustSynced(false), 3000);
-  };
-
-  const formatLastSync = (timestamp) => {
-    if (!timestamp) return 'Never';
-    try {
-      const d = new Date(timestamp);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return 'Recent';
-    }
-  };
+  let icon = <CheckCircle2 size={15} className="text-green-700" aria-hidden="true" />;
+  let label = 'All work synced';
+  if (!isOnline) { icon = <WifiOff size={15} className="text-slate-600" aria-hidden="true" />; label = 'Offline, saving on this device'; }
+  else if (sync.authExpired) { icon = <KeyRound size={15} className="text-amber-700" aria-hidden="true" />; label = 'Sign in again to sync'; }
+  else if (sync.serverReachable === false) { icon = <CloudOff size={15} className="text-amber-700" aria-hidden="true" />; label = 'Server unreachable'; }
+  else if (sync.pending) { icon = <RefreshCw size={15} className="text-sky-700" aria-hidden="true" />; label = `${sync.pending} waiting to sync`; }
 
   return (
-    <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm border border-slate-200/80 shadow-sm rounded-full px-3 py-1.5 text-xs text-slate-700">
-      {/* Online / Offline badge */}
-      <div className="flex items-center gap-1.5 font-medium">
-        {isOnline && serverUp ? (
-          <>
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <Wifi size={13} className="text-emerald-600" />
-            <span className="text-emerald-700 font-semibold">Online</span>
-          </>
-        ) : isOnline && !serverUp ? (
-          <>
-            <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            <CloudOff size={13} className="text-amber-600" />
-            <span className="text-amber-700 font-semibold">Offline / server unreachable</span>
-          </>
-        ) : (
-          <>
-            <span className="inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            <WifiOff size={13} className="text-amber-600" />
-            <span className="text-amber-700 font-semibold">Offline (Local)</span>
-          </>
-        )}
-      </div>
-
-      <span className="text-slate-300">|</span>
-
-      {/* Pending Outbox Count */}
-      <div className="flex items-center gap-1">
-        {pendingSyncCount > 0 ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-            <Clock size={11} />
-            {pendingSyncCount} pending
-          </span>
-        ) : justSynced ? (
-          <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-            <CheckCircle2 size={12} />
-            All synced
-          </span>
-        ) : (
-          <span className="text-slate-500">
-            Synced {formatLastSync(lastSyncTime)}
-          </span>
-        )}
-      </div>
-
-      {/* Manual Sync Button */}
-      {isOnline && (
-        <button
-          onClick={handleSyncClick}
-          disabled={isSyncing}
-          title="Flush outbox and synchronize"
-          className="ml-1 p-1 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-full transition-colors disabled:opacity-50"
-        >
-          <RefreshCw size={12} className={isSyncing ? 'animate-spin text-emerald-600' : ''} />
+    <div className="flex flex-wrap items-center gap-2 text-xs" role="status" aria-live="polite">
+      <span className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 font-semibold text-slate-800">
+        {icon}{label}
+        {sync.pending > 0 && !label.includes('waiting') && <span className="text-slate-500">· {sync.pending} pending</span>}
+      </span>
+      <span className="text-slate-500">Last sync {time(sync.lastSyncAt)}</span>
+      {sync.authExpired ? (
+        <button type="button" className="btn btn-secondary !min-h-[36px] !px-3 !py-1 text-xs" onClick={lockSession}>Re-enter password</button>
+      ) : (
+        <button type="button" className="btn btn-secondary !min-h-[36px] !px-3 !py-1 text-xs" disabled={!isOnline || sync.running} onClick={performSync}>
+          <RefreshCw size={14} className={sync.running ? 'animate-spin' : ''} aria-hidden="true" /> {sync.running ? 'Syncing…' : 'Sync now'}
         </button>
+      )}
+      {failed.length > 0 && (
+        <button type="button" className="inline-flex min-h-[36px] items-center gap-1 rounded-full bg-red-100 px-3 font-semibold text-red-800" onClick={() => setShowFailed(true)}>
+          <AlertTriangle size={14} aria-hidden="true" />{failed.length} rejected
+        </button>
+      )}
+      {showFailed && (
+        <Modal title="Changes the server rejected" onClose={() => setShowFailed(false)}>
+          <p className="mb-3 text-sm text-slate-600">These changes are still saved on this device but the server refused them. Ask your supervisor if you are unsure why.</p>
+          <ul className="mb-4 space-y-2 text-sm">
+            {failed.map(item => <li key={item.id} className="rounded-lg bg-slate-50 p-2"><strong>{item.action}</strong> — {item.lastError}</li>)}
+          </ul>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-primary" onClick={async () => { await retryFailedSync(); setShowFailed(false); }}>Retry all</button>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowFailed(false)}>Close</button>
+          </div>
+        </Modal>
       )}
     </div>
   );

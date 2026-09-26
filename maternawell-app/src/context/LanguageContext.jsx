@@ -14,6 +14,7 @@ export const UI_TRANSLATIONS = {
     finishTour: 'Start using Maternawell', quickReference: 'Quick reference',
     supervisorGuide: 'Supervisor guide', faq: 'Frequently asked questions',
     languageReference: 'Yoruba UI reference',
+    cases: 'Cases', auditTrail: 'Audit trail', selfCheck: 'Mother self-check', followUp: 'Follow-up',
     clinicalLanguageNotice: 'The validated Yoruba EPDS is not available in this release. Screening questions remain in English. Do not substitute an unvalidated translation. Yoruba navigation labels are a draft pending local language review.',
   },
   yo: {
@@ -25,6 +26,7 @@ export const UI_TRANSLATIONS = {
     skipTour: 'Rekọjá ìfihàn', finishTour: 'Bẹ̀rẹ̀ sí í lo Maternawell',
     quickReference: 'Ìtọ́sọ́nà kúkúrú', supervisorGuide: 'Ìtọ́sọ́nà alábòójútó',
     faq: 'Àwọn ìbéèrè tí a sábà máa ń béèrè', languageReference: 'Ìtọ́sọ́nà èdè Yorùbá',
+    cases: 'Àwọn ọ̀ràn', auditTrail: 'Àkọsílẹ̀ ìṣẹ́', selfCheck: 'Àyẹ̀wò ara-ẹni ìyá', followUp: 'Àtẹ̀lé',
   },
 };
 

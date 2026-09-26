@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, AlertTriangle, CheckCircle, Phone, MapPin } from 'lucide-react';
-import { useScreening } from '../context/ScreeningContext';
+import { submitSelfReferral } from '../db/selfReferral';
+import { EpdsLanguageNotice, LanguageSelector } from '../context/LanguageContext';
 import AnonymousSelfReferral from '../components/AnonymousSelfReferral';
 import { FACILITIES } from '../utils/constants';
 import { CRISIS_CONTACTS, STATUTORY_DISCLAIMER } from '../config/crisisContacts';
@@ -9,23 +10,14 @@ import { CRISIS_CONTACTS, STATUTORY_DISCLAIMER } from '../config/crisisContacts'
 const SelfReferralPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [result, setResult] = useState(null);
-  const { createAnonymousScreening } = useScreening();
 
   const handleSubmit = async (data) => {
-    const screening = await createAnonymousScreening(
-      {
-        age: data.age,
-        location: data.location,
-        hasSupport: data.hasSupport,
-        babyAge: data.babyAge,
-        facilityId: data.facilityId,
-        consentGiven: data.consentGiven,
-        consentDate: data.consentDate,
-        contactInfo: data.contactInfo
-      },
-      data.answers
-    );
-    setResult(screening);
+    setResult(await submitSelfReferral({
+      facilityId: data.facilityId,
+      answers: data.answers,
+      contactInfo: data.contactInfo,
+      consentGiven: data.consentGiven
+    }));
   };
 
   if (result) {
@@ -55,7 +47,7 @@ const SelfReferralPage = () => {
               <p className="text-sm text-green-900">Your referral reference</p>
               <p className="text-2xl font-bold font-mono text-green-900">{result.anonymousCode}</p>
               <p className="text-sm text-green-900 mt-2">Save this reference and show it at {facility?.name || 'your chosen health facility'}.</p>
-              <p role="status" className="text-sm text-green-900 mt-2">{result.syncStatus === 'synced' ? 'Received by the facility service.' : 'Saved on this device. Delivery to the facility is pending an internet connection.'}</p>
+              <p role="status" className="text-sm text-green-900 mt-2">{result.syncStatus === 'synced' ? 'Your referral has been sent to the facility.' : 'Saved securely on this phone. It will be sent to the facility automatically when you are back online.'}</p>
             </div>
             {/* Result Header */}
             <div className={`text-center mb-6 ${
@@ -68,8 +60,9 @@ const SelfReferralPage = () => {
                 <CheckCircle className="w-16 h-16 mx-auto mb-4" />
               )}
               <h1 className="text-2xl font-bold mb-2">
-                {urgent ? 'Immediate Support Needed' : 
-                 result.score >= 9 ? 'Support Recommended' : 'Routine Support Recommended'}
+                {result.hasSelfHarmRisk ? 'Please get support today' :
+                 urgent ? 'Please see a health worker soon' :
+                 result.score >= 9 ? 'Talking to someone could help' : 'Thank you for checking in on yourself'}
               </h1>
               <p className="text-gray-600">Your EPDS Score: <span className="font-bold">{result.score}</span></p>
             </div>
@@ -80,7 +73,7 @@ const SelfReferralPage = () => {
               result.riskTier.label === 'Moderate Risk' ? 'bg-orange-50 border-2 border-orange-200' :
               'bg-green-50 border-2 border-green-200'
             }`}>
-              <p className="text-sm font-medium text-gray-600 mb-1">Risk Level</p>
+              <p className="text-sm font-medium text-gray-600 mb-1">Screening result</p>
               <p className={`text-xl font-bold ${
                 result.riskTier.label === 'High Risk' ? 'text-red-700' :
                 result.riskTier.label === 'Moderate Risk' ? 'text-orange-700' :
@@ -99,8 +92,8 @@ const SelfReferralPage = () => {
                 </h3>
                 <div className="space-y-2 text-red-700">
                   <p className="font-semibold">Emergency Contacts:</p>
-                  {CRISIS_CONTACTS.filter(contact => contact.verified).map(contact => <p key={contact.id}><a href={`tel:${contact.phone}`}>{contact.name}: {contact.phone}</a></p>)}
-                  {!CRISIS_CONTACTS.some(contact => contact.verified) && <p>Helpline numbers are pending verification. Please seek help directly at your nearest health facility.</p>}
+                  {CRISIS_CONTACTS.map(contact => <p key={contact.id}>{contact.name}: {contact.verified ? <a className="underline" href={`tel:${contact.phone}`}>{contact.phone}</a> : <em>number pending verification</em>}</p>)}
+                  {result.hasSelfHarmRisk && <p className="font-semibold">Your answer about harming yourself has been flagged to {facility?.name || 'the facility'} so a supervisor can respond today. If you shared contact details, they will reach out.</p>}
                   <p>🏥 Visit nearest health facility immediately</p>
                   <p>💬 Tell someone you trust how you're feeling</p>
                 </div>
@@ -163,6 +156,8 @@ const SelfReferralPage = () => {
           Back
         </button>
 
+        <div className="mb-4 flex justify-end"><LanguageSelector /></div>
+        <EpdsLanguageNotice />
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-3">
             Self-Assessment for New Mothers

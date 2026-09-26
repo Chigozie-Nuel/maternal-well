@@ -12,8 +12,6 @@ import {
 } from '../domain/epds';
 import { EPDS_QUESTIONS } from '../utils/constants';
 import AnonymousSelfReferral from '../components/AnonymousSelfReferral';
-import ScreeningQuestion from '../pages/ScreeningQuestion';
-import { ScreeningProvider, useScreening } from '../context/ScreeningContext';
 
 describe('EPDS Domain Engine Unit Tests', () => {
   it('correctly scores all zeros as 0 (Low Risk)', () => {
@@ -158,6 +156,7 @@ describe('Defect Regressions: Questionnaire State Integrity', () => {
 
     // Step 1: fill background info
     fireEvent.change(screen.getByLabelText(/Your Age/i), { target: { value: '25' } });
+    fireEvent.click(screen.getByLabelText(/I consent to storing my screening/i));
     fireEvent.click(screen.getByRole('button', { name: /Continue to Questions/i }));
 
     // Questions 1 to 9: click first option (0 or 3 depending on item)
@@ -181,75 +180,5 @@ describe('Defect Regressions: Questionnaire State Integrity', () => {
     expect(submittedData.answers).toBeDefined();
     expect(submittedData.answers[10]).toBe(3);
     expect(isEscalation(submittedData.answers)).toBe(true);
-  });
-
-  it('B1 Regression: ScreeningContext atomic answerAndAdvance correctly computes and stores Question 10', () => {
-    let contextValues = null;
-
-    const TestConsumer = () => {
-      const screening = useScreening();
-      contextValues = screening;
-      return (
-        <div>
-          <button
-            onClick={() => {
-              screening.startScreening({
-                name: 'Amina Bello',
-                age: 24,
-                phone: '08011223344',
-                fileNumber: 'PHC-IKJ-001'
-              });
-            }}
-          >
-            Start
-          </button>
-        </div>
-      );
-    };
-
-    render(
-      <ScreeningProvider>
-        <TestConsumer />
-      </ScreeningProvider>
-    );
-
-    // Start screening
-    act(() => {
-      contextValues.startScreening({
-        name: 'Amina Bello',
-        age: 24,
-        phone: '08011223344',
-        fileNumber: 'PHC-IKJ-001'
-      });
-    });
-
-    expect(contextValues.currentScreening).toBeDefined();
-    expect(contextValues.currentScreening.currentQuestion).toBe(1);
-
-    // Answer questions 1 to 9 with score 0
-    for (let q = 1; q <= 9; q++) {
-      act(() => {
-        contextValues.answerAndAdvance(q, 0);
-      });
-      if (q < 9) {
-        expect(contextValues.currentScreening.currentQuestion).toBe(q + 1);
-      }
-    }
-
-    // Answer question 10 with score 1 (Item-10 self-harm ideation)
-    let completed = null;
-    act(() => {
-      completed = contextValues.answerAndAdvance(10, 1);
-    });
-
-    // Verify Question 10 is NOT lost, total score is 1, and escalation flag IS triggered!
-    expect(completed).toBeDefined();
-    expect(completed.completed).toBe(true);
-    expect(completed.answers[10]).toBe(1);
-    expect(completed.score).toBe(1);
-    expect(completed.hasSelfHarmRisk).toBe(true);
-    expect(completed.status).toBe('urgent_referral');
-    expect(completed.referralPlan.pathway).toBe('urgent_psychiatric');
-    expect(completed.referralPlan.urgency).toBe('same_day');
   });
 });

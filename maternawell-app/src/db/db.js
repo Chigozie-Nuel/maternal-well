@@ -1,10 +1,14 @@
 import Dexie from 'dexie';
-import { FACILITIES } from '../utils/constants';
-import { encryptScreeningRecord, ensureSessionKey } from '../utils/crypto';
+import { decryptData, encryptData, generateDeviceKey } from '../utils/crypto';
 
+/**
+ * On-device store (SRS 3.3, FR-8). Only routing metadata (ids, owner, timestamps,
+ * status) is stored in clear; every clinical or personal field lives inside an
+ * AES-GCM envelope (NFR-8). Data is partitioned by the signed-in staff member
+ * because each account's records are encrypted with that account's key.
+ */
 export const db = new Dexie('MaternawellDB');
 
-// Define database schema
 db.version(1).stores({
   screenings: 'id, facilityId, workerId, riskTier, hasSelfHarmRisk, status, syncStatus, createdAt, updatedAt',
   drafts: 'id, workerId, facilityId, updatedAt',
@@ -16,92 +20,111 @@ db.version(1).stores({
   facilities: 'id, name, type, location'
 });
 
-/**
- * Performs a one-time migration from localStorage to Dexie IndexedDB.
- * Encrypts sensitive fields at rest before storage and removes plaintext localStorage keys.
- */
-export async function migrateFromLocalStorage(overrideKey = null) {
-  try {
-    const isMigrated = localStorage.getItem('maternawell_migrated_to_dexie');
-    if (isMigrated) return;
+// v2 replaces the field-level v1 tables with whole-record envelopes. v1 data came from
+// the prototype whose scoring bug stored every screening as 0, so it is not migrated.
+db.version(2).stores({
+  screenings: null, drafts: null, followUps: null, escalations: null,
+  auditLog: null, outbox: null, users: null, facilities: null,
+  cases: 'key, ownerId, id, updatedAt',
+  caseDrafts: 'key, ownerId, id, updatedAt',
+  syncOutbox: 'id, ownerId, entityId, status, nextRetryAt, createdAt',
+  auditTrail: 'id, ownerId, timestamp',
+  publicOutbox: 'id, createdAt',
+  meta: 'key'
+});
 
-    const cryptoKey = overrideKey || await ensureSessionKey();
+const LEGACY_LOCAL_STORAGE_KEYS = ['maternawell_screenings', 'maternawell_audit_logs', 'maternawell_active_draft', 'maternawell_user', 'maternawell_token', 'maternawell_migrated_to_dexie', 'maternawell_device_salt'];
 
-    // 1. Seed facilities if empty
-    const facilityCount = await db.facilities.count();
-    if (facilityCount === 0 && Array.isArray(FACILITIES)) {
-      await db.facilities.bulkPut(FACILITIES);
-    }
+/** Removes plaintext health data left in localStorage by earlier prototype builds. */
+export function purgeLegacyPlaintext() {
+  try { for (const key of LEGACY_LOCAL_STORAGE_KEYS) localStorage.removeItem(key); }
+  catch { /* storage unavailable */ }
+}
 
-    // 2. Migrate and encrypt screenings from localStorage
-    const savedScreenings = localStorage.getItem('maternawell_screenings');
-    if (savedScreenings) {
-      try {
-        const parsed = JSON.parse(savedScreenings);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const formatted = parsed.map(s => ({
-            id: s.id || crypto.randomUUID(),
-            facilityId: s.facilityId || s.motherData?.facilityId || 'phc-ikeja',
-            workerId: s.workerId || s.createdBy || 'hw-001',
-            motherData: s.motherData || {
-              name: s.motherName || 'Unknown Patient',
-              phone: s.phone || '',
-              fileNumber: s.fileNumber || `MW-${Math.floor(1000 + Math.random() * 9000)}`
-            },
-            answers: s.answers || {},
-            score: typeof s.score === 'number' ? s.score : (s.epdsScore || 0),
-            riskTier: s.riskTier?.label || s.riskTier || 'Low Risk',
-            riskDetails: s.riskDetails || s.riskTier || {},
-            referralPlan: s.referralPlan || null,
-            hasSelfHarmRisk: Boolean(s.hasSelfHarmRisk || (s.answers && s.answers[10] > 0)),
-            selfHarmAcknowledged: Boolean(s.selfHarmAcknowledged),
-            status: s.status || 'completed',
-            syncStatus: s.syncStatus || 'synced',
-            notes: s.notes || '',
-            createdAt: s.timestamp || s.createdAt || new Date().toISOString(),
-            updatedAt: s.updatedAt || s.timestamp || new Date().toISOString()
-          }));
+const rowKey = (ownerId, id) => `${ownerId}|${id}`;
 
-          // Encrypt at rest before storing in Dexie
-          const encryptedRecords = await Promise.all(
-            formatted.map(rec => encryptScreeningRecord(rec, cryptoKey))
-          );
-          await db.screenings.bulkPut(encryptedRecords);
-        }
-      } catch (e) {
-        console.error('Failed to parse localStorage screenings during migration:', e);
-      }
-    }
+// ---- Cases (completed screenings) -------------------------------------------
 
-    // 3. Migrate audit logs from localStorage
-    const savedLogs = localStorage.getItem('maternawell_audit_logs');
-    if (savedLogs) {
-      try {
-        const parsedLogs = JSON.parse(savedLogs);
-        if (Array.isArray(parsedLogs) && parsedLogs.length > 0) {
-          const formattedLogs = parsedLogs.map(log => ({
-            id: log.id || crypto.randomUUID(),
-            timestamp: log.timestamp || new Date().toISOString(),
-            userId: log.userId || log.user?.staffId || 'system',
-            facilityId: log.facilityId || 'phc-ikeja',
-            action: log.action || 'UNKNOWN',
-            entityId: log.screeningId || log.entityId || '',
-            details: log.details || {},
-            syncStatus: 'synced'
-          }));
-          await db.auditLog.bulkPut(formattedLogs);
-        }
-      } catch (e) {
-        console.error('Failed to parse localStorage audit logs during migration:', e);
-      }
-    }
+export async function putCase(ownerId, record, key) {
+  await db.cases.put({ key: rowKey(ownerId, record.id), ownerId, id: record.id, updatedAt: record.updatedAt || new Date().toISOString(), envelope: await encryptData(record, key) });
+}
 
-    // Clean up plaintext localStorage keys (R3)
-    localStorage.removeItem('maternawell_screenings');
-    localStorage.removeItem('maternawell_audit_logs');
-    localStorage.removeItem('maternawell_active_draft');
-    localStorage.setItem('maternawell_migrated_to_dexie', 'true');
-  } catch (err) {
-    console.warn('Migration from localStorage encountered non-fatal error:', err);
+export async function getCase(ownerId, id, key) {
+  const row = await db.cases.get(rowKey(ownerId, id));
+  return row ? decryptData(row.envelope, key) : null;
+}
+
+export async function listCases(ownerId, key) {
+  const rows = await db.cases.where('ownerId').equals(ownerId).toArray();
+  const records = await Promise.all(rows.map(row => decryptData(row.envelope, key).catch(() => null)));
+  return records.filter(Boolean).sort((a, b) => String(b.completedAt || b.createdAt).localeCompare(String(a.completedAt || a.createdAt)));
+}
+
+export const deleteCase = (ownerId, id) => db.cases.delete(rowKey(ownerId, id));
+
+// ---- Drafts (in-progress screenings, NFR-3) ---------------------------------
+
+export async function putDraft(ownerId, draft, key) {
+  await db.caseDrafts.put({ key: rowKey(ownerId, draft.id), ownerId, id: draft.id, updatedAt: new Date().toISOString(), envelope: await encryptData(draft, key) });
+}
+
+export async function listDrafts(ownerId, key) {
+  const rows = await db.caseDrafts.where('ownerId').equals(ownerId).toArray();
+  const drafts = await Promise.all(rows.map(row => decryptData(row.envelope, key).catch(() => null)));
+  return drafts.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+export const deleteDraft = (ownerId, id) => db.caseDrafts.delete(rowKey(ownerId, id));
+
+// ---- Outbox (FR-9) -----------------------------------------------------------
+
+export async function enqueueOperation(ownerId, { entity = 'screenings', entityId, action, payload }, key) {
+  const item = {
+    id: crypto.randomUUID(), ownerId, entity, entityId, action,
+    status: 'pending', retryCount: 0, nextRetryAt: Date.now(), createdAt: new Date().toISOString(),
+    envelope: await encryptData(payload ?? {}, key)
+  };
+  await db.syncOutbox.put(item);
+  return item;
+}
+
+export const outboxFor = ownerId => db.syncOutbox.where('ownerId').equals(ownerId).toArray();
+
+// ---- Audit trail (NFR-7) -------------------------------------------------------
+
+export async function putAudit(ownerId, entry, key) {
+  const { details, ...meta } = entry;
+  await db.auditTrail.put({ ...meta, ownerId, envelope: await encryptData(details ?? {}, key) });
+}
+
+export async function listAudit(ownerId, key, limit = 300) {
+  const rows = await db.auditTrail.where('ownerId').equals(ownerId).toArray();
+  rows.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  return Promise.all(rows.slice(0, limit).map(async ({ envelope, ...row }) => ({ ...row, details: await decryptData(envelope, key).catch(() => ({})) })));
+}
+
+// ---- Meta --------------------------------------------------------------------
+
+export const getMeta = async key => (await db.meta.get(key))?.value;
+export const setMeta = (key, value) => db.meta.put({ key, value });
+
+// ---- Anonymous self-referral queue -------------------------------------------
+
+async function deviceKey() {
+  let key = await getMeta('deviceKey');
+  if (!key) {
+    key = await generateDeviceKey();
+    await setMeta('deviceKey', key);
   }
+  return key;
+}
+
+export async function queueSelfReferral(submission) {
+  await db.publicOutbox.put({ id: submission.id, createdAt: new Date().toISOString(), attempts: 0, envelope: await encryptData(submission, await deviceKey()) });
+}
+
+export async function listQueuedSelfReferrals() {
+  const key = await deviceKey();
+  const rows = await db.publicOutbox.toArray();
+  return Promise.all(rows.map(async row => ({ row, submission: await decryptData(row.envelope, key) })));
 }

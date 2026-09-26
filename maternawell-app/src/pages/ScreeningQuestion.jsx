@@ -4,11 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, AlertTriangle, Heart, ShieldAlert } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
 import { EPDS_QUESTIONS } from '../utils/constants';
+import { EpdsLanguageNotice } from '../context/LanguageContext';
 
 const ScreeningQuestion = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentScreening, answerAndAdvance, previousQuestion, resetCurrentScreening } = useScreening();
+  const { currentScreening, answerAndAdvance, previousQuestion, resetCurrentScreening, drafts, resumeDraft, loaded } = useScreening();
+  const [error, setError] = useState('');
   const [selectedAnswer, setSelectedAnswer] = useState(null);
 
   const isValidScreening = Boolean(currentScreening && currentScreening.id === id);
@@ -18,6 +20,12 @@ const ScreeningQuestion = () => {
   const isLastQuestion = currentQNum === 10;
   const isFirstQuestion = currentQNum === 1;
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // After a reload or unlock, pick the saved draft back up (NFR-3).
+  const savedDraft = !isValidScreening ? drafts.find(draft => draft.id === id) : null;
+  useEffect(() => {
+    if (savedDraft) resumeDraft(savedDraft);
+  }, [savedDraft, resumeDraft]);
 
   // Restore existing answer when navigating between questions (unconditional hook execution)
   useEffect(() => {
@@ -30,6 +38,7 @@ const ScreeningQuestion = () => {
   }, [currentQNum, currentScreening, isValidScreening]);
 
   if (!isValidScreening) {
+    if (!loaded || savedDraft) return <p className="p-10 text-center text-slate-600">Loading saved answers…</p>;
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <h2>No active screening found</h2>
@@ -43,6 +52,7 @@ const ScreeningQuestion = () => {
   const handleContinue = async () => {
     if (selectedAnswer !== null && !isSubmitting) {
       setIsSubmitting(true);
+      setError('');
       try {
         const result = await answerAndAdvance(question.id, selectedAnswer);
         if (isLastQuestion) {
@@ -50,6 +60,8 @@ const ScreeningQuestion = () => {
             navigate(`/results/${result.id}`);
           }
         }
+      } catch (err) {
+        setError(`${err.message} Your earlier answers are still saved.`);
       } finally {
         setIsSubmitting(false);
       }
@@ -69,6 +81,7 @@ const ScreeningQuestion = () => {
       padding: '20px'
     }}>
       <div className="container" style={{ maxWidth: '700px', paddingTop: '20px' }}>
+        <EpdsLanguageNotice />
         {/* Progress Bar */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ 
@@ -181,6 +194,7 @@ const ScreeningQuestion = () => {
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                     onClick={() => setSelectedAnswer(option.value)}
+                    aria-pressed={isSelected}
                     type="button"
                     style={{
                       padding: '16px 20px',
@@ -218,6 +232,7 @@ const ScreeningQuestion = () => {
               })}
             </div>
 
+            {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</p>}
             <div style={{ display: 'flex', gap: '12px' }}>
               {!isFirstQuestion && (
                 <motion.button
@@ -266,10 +281,9 @@ const ScreeningQuestion = () => {
 
           <button
             onClick={() => {
-              if (window.confirm('Are you sure you want to cancel this screening? Your progress is saved as draft.')) {
-                resetCurrentScreening();
-                navigate('/dashboard');
-              }
+              // Answers are already saved; the draft can be resumed or discarded from the dashboard.
+              resetCurrentScreening();
+              navigate('/dashboard');
             }}
             style={{
               background: 'none',
@@ -280,7 +294,7 @@ const ScreeningQuestion = () => {
               textDecoration: 'underline'
             }}
           >
-            Cancel Screening
+            Pause and return to dashboard
           </button>
         </div>
       </div>
