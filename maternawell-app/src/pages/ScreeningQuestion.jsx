@@ -11,7 +11,25 @@ const ScreeningQuestion = () => {
   const { currentScreening, answerAndAdvance, previousQuestion, resetCurrentScreening } = useScreening();
   const [selectedAnswer, setSelectedAnswer] = useState(null);
 
-  if (!currentScreening || currentScreening.id !== id) {
+  const isValidScreening = Boolean(currentScreening && currentScreening.id === id);
+  const currentQNum = isValidScreening ? (currentScreening.currentQuestion || 1) : 1;
+  const question = EPDS_QUESTIONS.find(q => q.id === currentQNum) || EPDS_QUESTIONS[0];
+  const progress = (currentQNum / 10) * 100;
+  const isLastQuestion = currentQNum === 10;
+  const isFirstQuestion = currentQNum === 1;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Restore existing answer when navigating between questions (unconditional hook execution)
+  useEffect(() => {
+    if (isValidScreening && currentScreening?.answers) {
+      const saved = currentScreening.answers[currentQNum];
+      setSelectedAnswer(saved !== undefined ? saved : null);
+    } else {
+      setSelectedAnswer(null);
+    }
+  }, [currentQNum, currentScreening, isValidScreening]);
+
+  if (!isValidScreening) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <h2>No active screening found</h2>
@@ -22,35 +40,24 @@ const ScreeningQuestion = () => {
     );
   }
 
-  const currentQNum = currentScreening.currentQuestion || 1;
-  const question = EPDS_QUESTIONS.find(q => q.id === currentQNum) || EPDS_QUESTIONS[0];
-  const progress = (currentQNum / 10) * 100;
-  const isLastQuestion = currentQNum === 10;
-  const isFirstQuestion = currentQNum === 1;
-
-  // Restore existing answer when navigating between questions
-  useEffect(() => {
-    if (currentScreening && currentScreening.answers) {
-      const saved = currentScreening.answers[currentQNum];
-      setSelectedAnswer(saved !== undefined ? saved : null);
-    } else {
-      setSelectedAnswer(null);
-    }
-  }, [currentQNum, currentScreening]);
-
-  const handleContinue = () => {
-    if (selectedAnswer !== null) {
-      const result = answerAndAdvance(question.id, selectedAnswer);
-      if (isLastQuestion) {
-        if (result && result.id) {
-          navigate(`/results/${result.id}`);
+  const handleContinue = async () => {
+    if (selectedAnswer !== null && !isSubmitting) {
+      setIsSubmitting(true);
+      try {
+        const result = await answerAndAdvance(question.id, selectedAnswer);
+        if (isLastQuestion) {
+          if (result && result.id) {
+            navigate(`/results/${result.id}`);
+          }
         }
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
 
   const handleBack = () => {
-    if (!isFirstQuestion) {
+    if (!isFirstQuestion && !isSubmitting) {
       previousQuestion();
     }
   };
@@ -230,17 +237,17 @@ const ScreeningQuestion = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleContinue}
-                disabled={selectedAnswer === null}
+                disabled={selectedAnswer === null || isSubmitting}
                 type="button"
                 className="btn btn-primary"
                 style={{ 
                   flex: !isFirstQuestion ? '2' : '1',
-                  opacity: selectedAnswer === null ? 0.6 : 1,
-                  cursor: selectedAnswer === null ? 'not-allowed' : 'pointer'
+                  opacity: selectedAnswer === null || isSubmitting ? 0.6 : 1,
+                  cursor: selectedAnswer === null || isSubmitting ? 'not-allowed' : 'pointer'
                 }}
               >
-                {isLastQuestion ? 'Complete Screening' : 'Next'}
-                {!isLastQuestion && <ChevronRight size={20} />}
+                {isSubmitting ? 'Saving...' : isLastQuestion ? 'Complete Screening' : 'Next'}
+                {!isLastQuestion && !isSubmitting && <ChevronRight size={20} />}
               </motion.button>
             </div>
           </motion.div>

@@ -24,6 +24,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useScreening } from '../context/ScreeningContext';
 import ScreeningCard from '../components/ScreeningCard';
+import SyncStatusChip from '../components/SyncStatusChip';
 import { STATUTORY_DISCLAIMER } from '../config/crisisContacts';
 
 const Dashboard = () => {
@@ -32,9 +33,9 @@ const Dashboard = () => {
   const { 
     screenings, 
     getStats, 
-    isOnline, 
-    lastSyncTime, 
-    performSync, 
+    activeDraft,
+    resumeDraft,
+    discardDraft,
     deleteScreening, 
     saveReferralOutcome 
   } = useScreening();
@@ -242,54 +243,7 @@ const Dashboard = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* Online / Offline Sync Chip */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: isOnline ? '#E8F5E9' : '#FFEBEE',
-              border: `1px solid ${isOnline ? '#A5D6A7' : '#FFCDD2'}`,
-              fontSize: '12px',
-              fontWeight: '600',
-              color: isOnline ? '#1B5E20' : '#B71C1C'
-            }}>
-              {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
-              <span>{isOnline ? 'Online' : 'Offline Mode'}</span>
-              {pendingSyncCount > 0 && (
-                <span style={{
-                  background: isOnline ? '#2E7D32' : '#C62828',
-                  color: 'white',
-                  borderRadius: '10px',
-                  padding: '1px 6px',
-                  fontSize: '11px'
-                }}>
-                  {pendingSyncCount} pending
-                </span>
-              )}
-            </div>
-
-            {isOnline && (
-              <button
-                onClick={handleSyncClick}
-                disabled={isSyncing}
-                style={{
-                  background: 'none',
-                  border: '1px solid #E0E0E0',
-                  borderRadius: '8px',
-                  padding: '8px',
-                  cursor: isSyncing ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#616161'
-                }}
-                title="Sync records to central store"
-              >
-                <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
-              </button>
-            )}
+            <SyncStatusChip />
 
             <button
               onClick={() => navigate('/new-screening')}
@@ -310,6 +264,88 @@ const Dashboard = () => {
 
         {/* Dashboard Body */}
         <div style={{ padding: '28px' }}>
+          {/* Active Screening Draft Banner (Defect B9) */}
+          {activeDraft && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                background: '#F0FDF4',
+                border: '2px solid #22C55E',
+                borderRadius: '12px',
+                padding: '16px 20px',
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                boxShadow: '0 2px 8px rgba(34, 197, 94, 0.12)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{
+                  background: '#15803D',
+                  color: 'white',
+                  borderRadius: '10px',
+                  padding: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Clock size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#14532D', margin: 0 }}>
+                    Resume screening for {activeDraft.motherData?.name || 'In-Progress Patient'}
+                  </h3>
+                  <p style={{ fontSize: '13px', color: '#166534', margin: '4px 0 0 0' }}>
+                    File No: <strong>{activeDraft.motherData?.fileNumber || 'N/A'}</strong> • Progress: Question {activeDraft.currentQuestion || 1} of 10 • Answers saved locally
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  onClick={() => {
+                    resumeDraft(activeDraft);
+                    navigate(`/screening/${activeDraft.id}`);
+                  }}
+                  style={{
+                    background: '#15803D',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Resume Screening
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to discard this in-progress screening draft?')) {
+                      discardDraft(activeDraft.id);
+                    }
+                  }}
+                  style={{
+                    background: 'white',
+                    color: '#4B5563',
+                    border: '1px solid #D1D5DB',
+                    borderRadius: '8px',
+                    padding: '8px 14px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Discard
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {/* Statutory Disclaimer Reminder */}
           <div style={{
             background: '#FFF8E1',
