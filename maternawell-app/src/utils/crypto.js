@@ -183,7 +183,9 @@ export async function encryptScreeningRecord(record, key) {
     clone.motherData = {
       ...clone.motherData,
       name: clone.motherData.name ? await encryptData(clone.motherData.name, key) : '',
+      motherName: clone.motherData.motherName ? await encryptData(clone.motherData.motherName, key) : '',
       phone: clone.motherData.phone ? await encryptData(clone.motherData.phone, key) : '',
+      phoneNumber: clone.motherData.phoneNumber ? await encryptData(clone.motherData.phoneNumber, key) : '',
       fileNumber: clone.motherData.fileNumber ? await encryptData(clone.motherData.fileNumber, key) : '',
       contactInfo: clone.motherData.contactInfo ? await encryptData(clone.motherData.contactInfo, key) : ''
     };
@@ -221,7 +223,9 @@ export async function decryptScreeningRecord(record, key) {
     clone.motherData = {
       ...clone.motherData,
       name: clone.motherData.name ? await decryptData(clone.motherData.name, key) : '',
+      motherName: clone.motherData.motherName ? await decryptData(clone.motherData.motherName, key) : '',
       phone: clone.motherData.phone ? await decryptData(clone.motherData.phone, key) : '',
+      phoneNumber: clone.motherData.phoneNumber ? await decryptData(clone.motherData.phoneNumber, key) : '',
       fileNumber: clone.motherData.fileNumber ? await decryptData(clone.motherData.fileNumber, key) : '',
       contactInfo: clone.motherData.contactInfo ? await decryptData(clone.motherData.contactInfo, key) : ''
     };
@@ -350,6 +354,7 @@ export function isSessionLocked() {
 export function lockSession() {
   inMemoryCryptoKey = null;
   isLocked = true;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('maternawell:locked'));
 }
 
 export function wipeSession() {
@@ -374,23 +379,11 @@ export async function unlockSession(password) {
 /**
  * Ensure an active session key exists; derives from default password/salt if none loaded
  */
-export async function ensureSessionKey(defaultPassword = 'MaternawellSecure2026!') {
+export async function ensureSessionKey() {
   if (inMemoryCryptoKey && !isLocked) {
     return inMemoryCryptoKey;
   }
-  let salt = sessionSalt;
-  if (!salt) {
-    salt = typeof localStorage !== 'undefined' ? localStorage.getItem('maternawell_device_salt') : null;
-    if (!salt) {
-      salt = generateSalt();
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('maternawell_device_salt', salt);
-      }
-    }
-  }
-  const key = await deriveKey(defaultPassword, salt);
-  setSessionKey(key, salt);
-  return key;
+  throw new Error('Session locked. Sign in again to unlock your encrypted records.');
 }
 
 export function resetIdleTimer() {

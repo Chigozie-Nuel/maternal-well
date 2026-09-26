@@ -1,0 +1,41 @@
+.help-page { max-width: 1000px; padding: 28px 20px 60px; margin: auto; color: #183327; }
+.help-header { display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 24px; }
+.help-header h1 { font-size: 30px; font-weight: 750; margin: 12px 0 4px; }
+.help-header a { color: #1b5e20; text-decoration: underline; }
+.help-header p { color: #4b6355; }
+.help-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.help-navigation button { min-height: 44px; padding: 10px 14px; color: #245332; border: 1px solid #bed1c2; border-radius: 8px; background: white; font: inherit; cursor: pointer; }
+.help-navigation button[aria-pressed="true"] { color: white; background: #256734; border-color: #256734; }
+.help-page button:focus-visible, .help-page a:focus-visible { outline: 3px solid #b45309; outline-offset: 3px; }
+.help-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+.help-actions span { font-size: 13px; color: #4b6355; }
+.guide-sheet { background: white; border: 1px solid #d8e5dc; border-radius: 12px; padding: 32px; margin-bottom: 24px; }
+.guide-sheet h2 { font-size: 24px; font-weight: 750; line-height: 1.3; margin-bottom: 8px; }
+.guide-sheet h3 { font-size: 17px; font-weight: 700; margin: 22px 0 8px; }
+.guide-sheet p { margin-bottom: 14px; }
+.guide-sheet ol, .guide-sheet ul { padding-left: 24px; margin: 16px 0; }
+.guide-sheet li { margin-bottom: 10px; padding-left: 4px; }
+.guide-subtitle { color: #577162; font-size: 13px; border-bottom: 1px solid #d8e5dc; padding-bottom: 16px; }
+.guide-callout { border-left: 4px solid #9f2525; background: #fff5f4; color: #7f1d1d; padding: 14px; margin: 18px 0; }
+.guide-footnote { font-size: 12px; color: #53695a; margin-top: 20px; }
+.guide-sheet table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+.guide-sheet th, .guide-sheet td { border: 1px solid #d8e5dc; padding: 9px 12px; text-align: left; }
+.guide-sheet th { background: #edf5ef; }
+.faq-entry { break-inside: avoid; }
+@media (max-width: 480px) { .help-page { padding: 20px 12px 40px; } .guide-sheet { padding: 20px; } .help-header h1 { font-size: 26px; } }
+@page { size: A4; margin: 14mm; }
+@media print {
+  .no-print, .context-help { display: none !important; }
+  body { background: white; }
+  .help-page { max-width: none; margin: 0; padding: 0; color: #111; font-family: Arial, sans-serif; }
+  .guide-sheet { margin: 0; padding: 0; border: 0; border-radius: 0; font-size: 10pt; line-height: 1.42; }
+  .guide-sheet + .guide-sheet { break-before: page; }
+  .guide-sheet h2 { font-size: 19pt; }
+  .guide-sheet h3 { font-size: 12pt; margin: 16px 0 7px; break-after: avoid; }
+  .guide-sheet p { margin-bottom: 10px; }
+  .guide-sheet li { margin-bottom: 8px; }
+  .guide-subtitle { font-size: 9pt; padding-bottom: 10px; }
+  .guide-footnote { font-size: 8pt; }
+  .guide-sheet table { font-size: 10pt; }
+  .guide-callout { padding: 10px; margin: 12px 0; }
+}

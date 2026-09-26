@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { User, Heart, AlertTriangle, ShieldCheck, ArrowLeft, ArrowRight, ShieldAlert } from 'lucide-react';
 import { EPDS_QUESTIONS, FACILITIES } from '../utils/constants';
@@ -10,28 +10,47 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
     location: '',
     facilityId: FACILITIES[0]?.id || 'phc-ikeja',
     hasSupport: 'yes',
-    babyAge: '0-1 months'
+    babyAge: '0-1 months',
+    consentGiven: false,
+    shareContact: false,
+    contactInfo: ''
   });
   const [answers, setAnswers] = useState({});
   const [currentQuestion, setCurrentQuestion] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const submissionRef = useRef(false);
 
   const handleInfoSubmit = (e) => {
     e.preventDefault();
+    if (!formData.consentGiven) return;
     setStep(2);
   };
 
-  const handleAnswer = (value) => {
+  const handleAnswer = async (value) => {
+    if (submissionRef.current) return;
     const updatedAnswers = { ...answers, [currentQuestion]: value };
     setAnswers(updatedAnswers);
     
     if (currentQuestion < 10) {
       setCurrentQuestion(prev => prev + 1);
     } else {
-      // Question 10 answered - submit with complete updated answers
-      onSubmit({
-        ...formData,
-        answers: updatedAnswers
-      });
+      submissionRef.current = true;
+      setSubmitting(true);
+      setError('');
+      try {
+        await onSubmit({
+          ...formData,
+          contactInfo: formData.shareContact ? formData.contactInfo.trim() : undefined,
+          consentDate: new Date().toISOString(),
+          answers: updatedAnswers
+        });
+      } catch (err) {
+        setError(err.message || 'We could not save your screening. Please try your answer again.');
+      } finally {
+        submissionRef.current = false;
+        setSubmitting(false);
+      }
     }
   };
 
@@ -50,13 +69,13 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold mb-3">
             <ShieldCheck className="w-4 h-4" />
-            100% Confidential & Anonymous
+            Private self-assessment
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Maternal Well-being Self-Check
           </h1>
           <p className="text-gray-600 text-sm max-w-md mx-auto">
-            Take a few quiet minutes to reflect on how you have been feeling. No health worker will see your name.
+            Take a few quiet minutes to reflect on how you have been feeling. Your name is not required.
           </p>
         </div>
 
@@ -182,10 +201,25 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
 
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs text-emerald-800">
                 <p>
-                  <strong>Privacy Guarantee:</strong> You will not be asked for your name, address, or phone number.
+                  <strong>Your choice:</strong> Your name and contact details are not required.
                   At the end of this screening, you will receive an anonymous reference code that you can optionally show to a nurse at your chosen PHC.
                 </p>
               </div>
+
+              <label className="flex items-start gap-3 text-sm text-gray-700">
+                <input type="checkbox" checked={formData.shareContact} onChange={e => setFormData(prev => ({ ...prev, shareContact: e.target.checked }))} />
+                I would like my chosen facility to contact me. Sharing contact details is optional and makes this referral identifiable.
+              </label>
+              {formData.shareContact && (
+                <div>
+                  <label htmlFor="self-referral-contact" className="block text-sm font-medium text-gray-700 mb-2">Phone or other contact detail</label>
+                  <input id="self-referral-contact" required maxLength={200} value={formData.contactInfo} onChange={e => setFormData(prev => ({ ...prev, contactInfo: e.target.value }))} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                </div>
+              )}
+              <label className="flex items-start gap-3 text-sm text-gray-700">
+                <input type="checkbox" required checked={formData.consentGiven} onChange={e => setFormData(prev => ({ ...prev, consentGiven: e.target.checked }))} />
+                I consent to storing my screening and sharing it with my selected facility for referral and follow-up. I understand this screening is not a diagnosis.
+              </label>
 
               <button
                 type="submit"
@@ -250,6 +284,7 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
                   <button
                     key={`${currentQ.id}-${option.value}`}
                     type="button"
+                    disabled={submitting}
                     onClick={() => handleAnswer(option.value)}
                     className={`w-full p-4 text-left border-2 rounded-xl transition-all flex items-center justify-between group ${
                       isSelected
@@ -268,10 +303,14 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
               })}
             </div>
 
+            {submitting && <p role="status" className="text-sm text-green-800 mb-4">Saving your screening…</p>}
+            {error && <p role="alert" className="text-sm text-red-800 bg-red-50 rounded-xl p-4 mb-4">{error}</p>}
+
             <div className="flex items-center justify-between pt-4 border-t border-gray-100">
               {currentQuestion > 1 ? (
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={() => setCurrentQuestion(prev => prev - 1)}
                   className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
                 >

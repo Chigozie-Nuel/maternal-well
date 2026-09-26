@@ -3,19 +3,25 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, AlertTriangle, CheckCircle, Phone, MapPin } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
 import AnonymousSelfReferral from '../components/AnonymousSelfReferral';
+import { FACILITIES } from '../utils/constants';
+import { CRISIS_CONTACTS, STATUTORY_DISCLAIMER } from '../config/crisisContacts';
 
 const SelfReferralPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [result, setResult] = useState(null);
   const { createAnonymousScreening } = useScreening();
 
-  const handleSubmit = (data) => {
-    const screening = createAnonymousScreening(
+  const handleSubmit = async (data) => {
+    const screening = await createAnonymousScreening(
       {
         age: data.age,
         location: data.location,
         hasSupport: data.hasSupport,
-        babyAge: data.babyAge
+        babyAge: data.babyAge,
+        facilityId: data.facilityId,
+        consentGiven: data.consentGiven,
+        consentDate: data.consentDate,
+        contactInfo: data.contactInfo
       },
       data.answers
     );
@@ -23,6 +29,8 @@ const SelfReferralPage = () => {
   };
 
   if (result) {
+    const urgent = result.hasSelfHarmRisk || result.referralPlan?.urgency === 'same_day';
+    const facility = FACILITIES.find(item => item.id === (result.facilityId || result.motherData?.facilityId));
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 py-8 px-4">
         <motion.div
@@ -42,19 +50,26 @@ const SelfReferralPage = () => {
           </button>
 
           <div className="bg-white rounded-2xl shadow-xl p-8">
+            <p className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 mb-6">{STATUTORY_DISCLAIMER}</p>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+              <p className="text-sm text-green-900">Your referral reference</p>
+              <p className="text-2xl font-bold font-mono text-green-900">{result.anonymousCode}</p>
+              <p className="text-sm text-green-900 mt-2">Save this reference and show it at {facility?.name || 'your chosen health facility'}.</p>
+              <p role="status" className="text-sm text-green-900 mt-2">{result.syncStatus === 'synced' ? 'Received by the facility service.' : 'Saved on this device. Delivery to the facility is pending an internet connection.'}</p>
+            </div>
             {/* Result Header */}
             <div className={`text-center mb-6 ${
-              result.hasSelfHarmRisk ? 'text-red-600' : 
+              urgent ? 'text-red-600' : 
               result.score >= 9 ? 'text-orange-600' : 'text-green-600'
             }`}>
-              {result.hasSelfHarmRisk ? (
+              {urgent ? (
                 <AlertTriangle className="w-16 h-16 mx-auto mb-4" />
               ) : (
                 <CheckCircle className="w-16 h-16 mx-auto mb-4" />
               )}
               <h1 className="text-2xl font-bold mb-2">
-                {result.hasSelfHarmRisk ? 'Immediate Support Needed' : 
-                 result.score >= 9 ? 'Support Recommended' : 'You are Doing Well'}
+                {urgent ? 'Immediate Support Needed' : 
+                 result.score >= 9 ? 'Support Recommended' : 'Routine Support Recommended'}
               </h1>
               <p className="text-gray-600">Your EPDS Score: <span className="font-bold">{result.score}</span></p>
             </div>
@@ -76,16 +91,16 @@ const SelfReferralPage = () => {
             </div>
 
             {/* Emergency Contact */}
-            {result.hasSelfHarmRisk && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6 mb-6">
+            {urgent && (
+              <div role="alert" className="bg-red-50 border-2 border-red-300 rounded-xl p-6 mb-6">
                 <h3 className="font-bold text-red-800 mb-3 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
                   Immediate Help Available
                 </h3>
                 <div className="space-y-2 text-red-700">
                   <p className="font-semibold">Emergency Contacts:</p>
-                  <p>📞 National Suicide Prevention Hotline: 0800-HELP</p>
-                  <p>📞 Lagos Mental Health: +234-XXX-XXX-XXXX</p>
+                  {CRISIS_CONTACTS.filter(contact => contact.verified).map(contact => <p key={contact.id}><a href={`tel:${contact.phone}`}>{contact.name}: {contact.phone}</a></p>)}
+                  {!CRISIS_CONTACTS.some(contact => contact.verified) && <p>Helpline numbers are pending verification. Please seek help directly at your nearest health facility.</p>}
                   <p>🏥 Visit nearest health facility immediately</p>
                   <p>💬 Tell someone you trust how you're feeling</p>
                 </div>
@@ -111,11 +126,11 @@ const SelfReferralPage = () => {
               <div className="space-y-3 text-sm text-blue-800">
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4" />
-                  <span>Mental Health Helpline: Available 24/7</span>
+                  <span>Ask your chosen facility for its current mental health support contacts.</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
-                  <span>Find a nearby Primary Health Center</span>
+                  <span>{facility ? `${facility.name} — ${facility.location || facility.lga}` : 'Visit your selected Primary Health Centre.'}</span>
                 </div>
                 <p className="mt-3 text-xs">
                   Remember: You're not alone. Many mothers experience these feelings, and help is available.
@@ -164,7 +179,7 @@ const SelfReferralPage = () => {
             </div>
             <h3 className="font-semibold text-gray-900 mb-2">Private & Confidential</h3>
             <p className="text-sm text-gray-600">
-              Your responses are completely anonymous. We don't collect your name or contact information.
+              Your name is not required. Contact details are optional if you want your chosen facility to follow up with you.
             </p>
           </div>
 
