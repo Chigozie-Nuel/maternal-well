@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { LogIn, Shield, Heart, UserCheck, ShieldCheck, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { FACILITIES } from '../utils/constants';
+import { deriveKey, generateSalt, setSessionKey } from '../utils/crypto';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ const Login = () => {
   });
   const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.staffId || !formData.password || !formData.facilityName) {
@@ -24,20 +25,33 @@ const Login = () => {
       return;
     }
 
-    const user = {
-      id: formData.staffId,
-      staffId: formData.staffId,
-      name: formData.role === 'supervisor' ? `Supervisor ${formData.staffId}` : `Health Worker ${formData.staffId}`,
-      facility: formData.facilityName,
-      role: formData.role,
-      loginTime: new Date().toISOString()
-    };
+    try {
+      // Derive session crypto key from password via PBKDF2 (>= 210,000 iterations)
+      let salt = localStorage.getItem(`maternawell_salt_${formData.staffId}`);
+      if (!salt) {
+        salt = generateSalt();
+        localStorage.setItem(`maternawell_salt_${formData.staffId}`, salt);
+      }
+      const cryptoKey = await deriveKey(formData.password, salt);
+      setSessionKey(cryptoKey, salt);
 
-    login(user);
-    if (formData.role === 'supervisor') {
-      navigate('/supervisor');
-    } else {
-      navigate('/dashboard');
+      const user = {
+        id: formData.staffId,
+        staffId: formData.staffId,
+        name: formData.role === 'supervisor' ? `Supervisor ${formData.staffId}` : `Health Worker ${formData.staffId}`,
+        facility: formData.facilityName,
+        role: formData.role,
+        loginTime: new Date().toISOString()
+      };
+
+      login(user);
+      if (formData.role === 'supervisor') {
+        navigate('/supervisor');
+      } else {
+        navigate('/dashboard');
+      }
+    } catch (err) {
+      setError('Key derivation failed: ' + err.message);
     }
   };
 

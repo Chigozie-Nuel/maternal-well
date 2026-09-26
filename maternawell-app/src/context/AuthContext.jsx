@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { wipeSession } from '../utils/crypto';
 
 const AuthContext = createContext(null);
 
@@ -33,6 +34,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    wipeSession();
     setUser(null);
   };
 
