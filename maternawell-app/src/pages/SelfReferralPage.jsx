@@ -7,6 +7,25 @@ import AnonymousSelfReferral from '../components/AnonymousSelfReferral';
 import { FACILITIES } from '../utils/constants';
 import { CRISIS_CONTACTS, STATUTORY_DISCLAIMER } from '../config/crisisContacts';
 
+// Mother-facing wording for each referral pathway (SRS 5.4 stigma-sensitive language).
+const MOTHER_STEPS = {
+  urgent_psychiatric: [
+    'Please go to your chosen health centre today and show your reference code. You do not have to explain everything; the code is enough.',
+    'Tell someone you trust how you are feeling and ask them to stay with you or go with you.',
+    'If you feel you might act on thoughts of harming yourself, go to the nearest hospital emergency unit now.'
+  ],
+  phc_counselling: [
+    'Visit your chosen health centre within the next week and show your reference code to a nurse or health worker.',
+    'Many mothers feel this way after having a baby. Talking with a trained health worker can really help.',
+    'Share how you are feeling with your partner, a family member or a friend you trust.'
+  ],
+  community_peer: [
+    'Keep going to your routine postnatal and immunisation visits.',
+    'Rest when you can, eat regularly, and accept help with the baby from people you trust.',
+    'If things get harder, you can take this check again or talk to a health worker at any time.'
+  ]
+};
+
 const SelfReferralPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [result, setResult] = useState(null);
@@ -79,7 +98,7 @@ const SelfReferralPage = () => {
                 result.riskTier.label === 'Moderate Risk' ? 'text-orange-700' :
                 'text-green-700'
               }`}>
-                {result.riskTier.label}
+                {{ low: 'Few signs of distress', moderate: 'Some signs of distress', high: 'Many signs of distress' }[result.riskTier.tier]}
               </p>
             </div>
 
@@ -88,10 +107,10 @@ const SelfReferralPage = () => {
               <div role="alert" className="bg-red-50 border-2 border-red-300 rounded-xl p-6 mb-6">
                 <h3 className="font-bold text-red-800 mb-3 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
-                  Immediate Help Available
+                  Help is available today
                 </h3>
                 <div className="space-y-2 text-red-700">
-                  <p className="font-semibold">Emergency Contacts:</p>
+                  <p className="font-semibold">Support lines:</p>
                   {CRISIS_CONTACTS.map(contact => <p key={contact.id}>{contact.name}: {contact.verified ? <a className="underline" href={`tel:${contact.phone}`}>{contact.phone}</a> : <em>number pending verification</em>}</p>)}
                   {result.hasSelfHarmRisk && <p className="font-semibold">Your answer about harming yourself has been flagged to {facility?.name || 'the facility'} so a supervisor can respond today. If you shared contact details, they will reach out.</p>}
                   <p>🏥 Visit nearest health facility immediately</p>
@@ -102,9 +121,9 @@ const SelfReferralPage = () => {
 
             {/* Recommended Actions */}
             <div className="mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">Recommended Next Steps</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">What you can do next</h3>
               <ul className="space-y-2">
-                {result.referralActions.map((action, index) => (
+                {(MOTHER_STEPS[result.referralPlan?.pathway] || []).map((action, index) => (
                   <li key={index} className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
                     <span className="text-gray-700">{action}</span>

@@ -1,11 +1,13 @@
 {
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
-    "framer-motion": "^13.2.0",
-    "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.8",
-    "lucide-react": "^1.42.0",
-    "tailwind-merge": "^3.6.0"
+  "name": "maternawell-nigeria",
+  "private": true,
+  "description": "Maternawell Nigeria: offline-first postnatal depression screening and referral (React PWA + Node sync API).",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "setup": "npm ci --prefix maternawell-app",
+    "dev:all": "node scripts/dev-all.mjs",
+    "build": "npm run build --prefix maternawell-app",
+    "start": "npm run build && npm start --prefix server",
+    "test": "npm test --prefix server && npm test --prefix maternawell-app"
   }
 }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Maternawell</string>
+    <string name="title_activity_main">Maternawell</string>
+    <string name="package_name">ng.maternawell.app</string>
+    <string name="custom_url_scheme">ng.maternawell.app</string>
+</resources>

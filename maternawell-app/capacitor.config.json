@@ -1,0 +1,12 @@
+{
+  "appId": "ng.maternawell.app",
+  "appName": "Maternawell",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

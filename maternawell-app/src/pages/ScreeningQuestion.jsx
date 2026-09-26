@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, AlertTriangle, Heart, ShieldAlert } from 'lucide-react';
 import { useScreening } from '../context/ScreeningContext';
 import { EPDS_QUESTIONS } from '../utils/constants';
@@ -117,12 +117,11 @@ const ScreeningQuestion = () => {
           </div>
         </div>
 
-        <AnimatePresence mode="wait">
+        {/* No exit animation: the outgoing card must never be tappable once the next question is active. */}
           <motion.div
             key={currentQNum}
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -40 }}
             transition={{ duration: 0.25 }}
             className="card"
             style={{ padding: '32px' }}
@@ -266,7 +265,6 @@ const ScreeningQuestion = () => {
               </motion.button>
             </div>
           </motion.div>
-        </AnimatePresence>
 
         <div style={{
           marginTop: '20px',

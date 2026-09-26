@@ -109,9 +109,13 @@ export const ScreeningProvider = ({ children }) => {
     let lastRun = null;
     const unsubscribe = subscribeSync(state => {
       setSync(previous => ({ ...previous, ...state }));
-      if (!state.running && state.lastSyncAt !== lastRun) {
+      if (state.running) return;
+      if (state.lastSyncAt !== lastRun) {
         lastRun = state.lastSyncAt;
         reload();
+      } else {
+        // Failed attempt: records are unchanged but the pending/failed counts may not be.
+        outboxSummary(contextRef.current.ownerId).then(summary => setSync(previous => ({ ...previous, ...summary }))).catch(() => {});
       }
     });
     return () => { stop(); unsubscribe(); };

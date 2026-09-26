@@ -182,3 +182,14 @@ test('CORS allows the Android shell origin', async () => {
   const foreign = await fetch(`${base}/api/health`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(foreign.headers.get('access-control-allow-origin'), null);
 });
+
+test('gzip request bodies are accepted for low-bandwidth sync', async () => {
+  const { gzipSync } = await import('node:zlib');
+  const record = screening([1, 1, 1, 1, 1, 1, 1, 1, 1, 0]);
+  const response = await fetch(`${base}/api/sync/push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${worker}` },
+    body: gzipSync(JSON.stringify({ items: [op(record.id, 'CREATE', record)] }))
+  });
+  assert.equal((await response.json()).acceptedIds.length, 1);
+});

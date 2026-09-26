@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
 import path from 'node:path';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { scoreEpds, classifyRisk, isEscalation, getReferralPlan } from '../maternawell-app/src/domain/epds.js';
 import { escalationDueBy, isUrgent } from '../maternawell-app/src/domain/escalation.js';
@@ -291,12 +292,24 @@ export function createApplication(options = {}) {
       reject(size > BODY_LIMIT, 413, 'Request body is too large.');
       chunks.push(chunk);
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    let raw = Buffer.concat(chunks);
+    // Clients on 2G links gzip their sync batches (NFR-2).
+    if (request.headers['content-encoding'] === 'gzip') {
+      try { raw = gunzipSync(raw, { maxOutputLength: BODY_LIMIT }); }
+      catch { throw new ApiError(400, 'Request body could not be decompressed.'); }
+    }
+    try { return JSON.parse(raw.toString('utf8')); }
     catch { throw new ApiError(400, 'Request body must contain valid JSON.'); }
   };
   const json = (response, status, body) => {
-    response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
-    response.end(JSON.stringify(body));
+    let payload = Buffer.from(JSON.stringify(body));
+    const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Vary': 'Origin, Accept-Encoding' };
+    if (payload.length > 1024 && /gzip/.test(response.req?.headers['accept-encoding'] || '')) {
+      payload = gzipSync(payload);
+      headers['Content-Encoding'] = 'gzip';
+    }
+    response.writeHead(status, headers);
+    response.end(payload);
   };
   const distDirectory = path.resolve(options.distDirectory || path.join(serverDirectory, '..', 'maternawell-app', 'dist'));
   const allowedOrigins = new Set([...DEFAULT_ALLOWED_ORIGINS, ...(options.allowedOrigins || (process.env.MATERNAWELL_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean))]);
@@ -387,7 +400,7 @@ export function createApplication(options = {}) {
       reject(!candidate.startsWith(`${distDirectory}${path.sep}`) && candidate !== distDirectory, 403, 'Invalid path.');
       let file = existsSync(candidate) && statSync(candidate).isFile() ? candidate : path.join(distDirectory, 'index.html');
       reject(!existsSync(file), 404, 'Frontend build not found. Run npm run build in maternawell-app.');
-      const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
+      const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
       response.writeHead(200, { 'Content-Type': `${types[path.extname(file)] || 'application/octet-stream'}; charset=utf-8`, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': path.extname(file) === '.html' ? 'no-cache' : 'public, max-age=3600', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" });
       if (request.method === 'HEAD') response.end(); else createReadStream(file).pipe(response);
     } catch (error) {
