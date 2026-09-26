@@ -5,10 +5,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, createRea
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scoreEpds, classifyRisk, isEscalation, getReferralPlan } from '../maternawell-app/src/domain/epds.js';
+import { escalationDueBy, isUrgent } from '../maternawell-app/src/domain/escalation.js';
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const BODY_LIMIT = 1024 * 1024;
+export const FOLLOW_UP_STATUSES = ['pending', 'contacted', 'completed', 'lost_to_followup'];
 // Kept in step with the public facility directory in the client.
 export const FACILITIES = [
   { id: 'phc-ikeja', name: 'Ikeja Primary Health Centre', lga: 'Ikeja', location: 'Wamako Street, Ikeja, Lagos' },
@@ -37,6 +39,12 @@ const textField = (value, maximum = 2000) => typeof value === 'string' ? value.t
 const hash = value => createHash('sha256').update(value).digest('hex');
 const now = () => new Date().toISOString();
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Offline screenings keep the time they were really completed, but never a future time.
+const clientTime = value => {
+  const time = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(time) && time <= Date.now() + 5 * 60 * 1000 ? new Date(time).toISOString() : null;
+};
+const DEFAULT_ALLOWED_ORIGINS = ['capacitor://localhost', 'https://localhost', 'http://localhost'];
 
 function loadKey(dbPath, suppliedKey, production) {
   const value = suppliedKey || process.env.MATERNOWELL_DATA_KEY || process.env.MATERNAWELL_DATA_KEY;
@@ -154,9 +162,10 @@ export function createApplication(options = {}) {
       hasSelfHarmRisk: isEscalation(answers), referralPlan, referralActions: referralPlan.actions,
       completed: true, isAnonymous: anonymous, ...(anonymous ? { anonymousCode } : {}),
       status: isUrgent ? 'urgent_referral' : score >= 9 ? 'referral_needed' : 'completed',
-      createdAt: now(), completedAt: now(), ...(payload.createdAt ? { clientCreatedAt: textField(payload.createdAt, 40) } : {}),
+      createdAt: clientTime(payload.createdAt) || now(), completedAt: clientTime(payload.completedAt) || now(), receivedAt: now(),
       selfHarmAcknowledged: false, referralOutcome: 'pending', followUps: [], deletedAt: null
     };
+    if (record.hasSelfHarmRisk) record.escalationDueBy = escalationDueBy(record.completedAt);
     saveScreening(record);
     audit(user, anonymous ? 'ANONYMOUS_SCREENING_CREATED' : 'SCREENING_COMPLETED', id, { score, hasSelfHarmRisk: record.hasSelfHarmRisk });
     notifyEscalation(record);
@@ -165,12 +174,21 @@ export function createApplication(options = {}) {
   const restrictedRecord = (record, user) => {
     if (record.deletedAt) return { id: record.id, facilityId: record.facilityId, deletedAt: record.deletedAt, revision: record.revision, syncStatus: 'synced' };
     if (user.role === 'health_worker') return record;
-    const { motherData, answers, referralNotes, supervisorNotes, followUps, ...summary } = record;
-    summary.motherData = { isAnonymous: Boolean(record.isAnonymous) };
-    if (user.role === 'supervisor' && (record.hasSelfHarmRisk || record.score >= 13)) {
+    const { motherData, answers, referralNotes, supervisorNotes, followUps, workerSafetyConfirmation, ...summary } = record;
+    if (user.role === 'admin') {
+      summary.motherData = { isAnonymous: Boolean(record.isAnonymous) };
+      return summary;
+    }
+    // Supervisors track every case by name and file number (FR-15) but only see
+    // item-level EPDS answers and clinical notes once a case is escalated (SRS 5.5).
+    summary.motherData = { isAnonymous: Boolean(record.isAnonymous), name: motherData?.name, fileNumber: motherData?.fileNumber };
+    summary.followUps = followUps;
+    summary.referralNotes = referralNotes;
+    summary.supervisorNotes = supervisorNotes;
+    if (isUrgent(record)) {
+      summary.motherData = motherData;
       summary.answers = answers;
-      summary.supervisorNotes = supervisorNotes;
-      summary.followUps = followUps;
+      summary.workerSafetyConfirmation = workerSafetyConfirmation;
     }
     return summary;
   };
@@ -203,9 +221,7 @@ export function createApplication(options = {}) {
         reject(!record || record.facilityId !== user.facilityId, 404, 'Screening not found in your facility.');
         reject(record.deletedAt, 409, 'Screening was deleted.');
         if (item.action === 'FOLLOW_UP') {
-          reject(user.role === 'supervisor' && !record.hasSelfHarmRisk && record.score < 13, 403, 'Supervisor follow-up is limited to escalated cases.');
-          const outcomes = ['pending', 'referred', 'scheduled', 'in_progress', 'completed', 'declined', 'unreachable', 'lost_to_followup'];
-          reject(!outcomes.includes(payload.outcome), 400, 'Invalid referral outcome.');
+          reject(!FOLLOW_UP_STATUSES.includes(payload.outcome), 400, 'Invalid referral follow-up status.');
           const notes = textField(payload.notes);
           reject(payload.outcome !== 'pending' && !notes, 400, 'Follow-up notes are required.');
           const followUp = { id: item.id, outcome: payload.outcome, notes, timestamp: now(), workerId: user.id };
@@ -216,9 +232,18 @@ export function createApplication(options = {}) {
           if (payload.outcome === 'completed') record.status = 'completed';
           saveScreening(record);
           audit(user, 'REFERRAL_FOLLOW_UP_RECORDED', record.id, followUp);
+        } else if (item.action === 'SAFETY_CONFIRM') {
+          reject(user.role !== 'health_worker', 403, 'Only the screening health worker confirms immediate safety steps.');
+          reject(!record.hasSelfHarmRisk, 400, 'Screening has no self-harm escalation.');
+          reject(payload.notLeftAlone !== true || payload.supervisorInformed !== true, 400, 'Both safety confirmations are required.');
+          if (!record.workerSafetyConfirmation) {
+            record.workerSafetyConfirmation = { notLeftAlone: true, supervisorInformed: true, confirmedAt: now(), confirmedBy: user.id };
+            saveScreening(record);
+            audit(user, 'ESCALATION_SAFETY_CONFIRMED', record.id, { confirmedBy: user.id });
+          }
         } else if (item.action === 'ACKNOWLEDGE') {
           reject(user.role !== 'supervisor', 403, 'Only a facility supervisor can acknowledge escalation.');
-          reject(!record.hasSelfHarmRisk && record.score < 13, 400, 'Screening does not require urgent escalation.');
+          reject(!record.hasSelfHarmRisk, 400, 'Only Item-10 self-harm flags require supervisor acknowledgement.');
           reject(!textField(payload.notes), 400, 'Supervisor acknowledgment notes are required.');
           reject(record.selfHarmAcknowledged, 409, 'Escalation has already been acknowledged.');
           record.selfHarmAcknowledged = true;
@@ -274,8 +299,18 @@ export function createApplication(options = {}) {
     response.end(JSON.stringify(body));
   };
   const distDirectory = path.resolve(options.distDirectory || path.join(serverDirectory, '..', 'maternawell-app', 'dist'));
+  const allowedOrigins = new Set([...DEFAULT_ALLOWED_ORIGINS, ...(options.allowedOrigins || (process.env.MATERNAWELL_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean))]);
   const handler = async (request, response) => {
     try {
+      const origin = request.headers.origin;
+      if (origin && allowedOrigins.has(origin)) {
+        // The Android (Capacitor) shell runs on its own origin and calls this API directly.
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        response.setHeader('Vary', 'Origin');
+      }
+      if (request.method === 'OPTIONS') { response.writeHead(204); return response.end(); }
       const url = new URL(request.url, 'http://localhost');
       if (production && options.trustProxy && request.headers['x-forwarded-proto'] !== 'https') throw new ApiError(400, 'HTTPS is required.');
       if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { status: 'ok', notificationMode: 'mock' });
