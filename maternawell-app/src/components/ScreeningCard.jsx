@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
-import { FileText, Clock, CheckCircle, AlertTriangle, X, Download, Trash2, Eye } from 'lucide-react';
+import { Clock, CheckCircle, AlertTriangle, Download, Trash2, Eye, ShieldAlert } from 'lucide-react';
 import { format } from 'date-fns';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const ScreeningCard = ({ screening, onView, onDelete, onExport }) => {
+const ScreeningCard = ({ screening, onView, onDelete, onUpdateOutcome }) => {
   const getStatusColor = (status) => {
     switch(status) {
       case 'urgent_referral': return 'bg-red-100 text-red-800 border-red-300';
@@ -16,162 +16,187 @@ const ScreeningCard = ({ screening, onView, onDelete, onExport }) => {
   };
 
   const getRiskColor = (riskTier) => {
-    if (!riskTier) return 'bg-gray-200';
-    switch(riskTier.label) {
-      case 'Low Risk': return 'bg-green-500';
-      case 'Moderate Risk': return 'bg-orange-500';
-      case 'High Risk': return 'bg-red-500';
-      default: return 'bg-gray-500';
+    const tier = riskTier?.tier || (riskTier?.label === 'High Risk' ? 'high' : riskTier?.label === 'Moderate Risk' ? 'moderate' : 'low');
+    switch(tier) {
+      case 'low': return 'bg-green-500';
+      case 'moderate': return 'bg-orange-500';
+      case 'high': return 'bg-red-500';
+      default: return 'bg-gray-400';
     }
   };
+
+  const patientName = screening.motherData?.isAnonymous
+    ? 'Anonymous Mother'
+    : (screening.motherData?.name || screening.motherData?.motherName || 'Unnamed Patient');
+  const fileNumber = screening.motherData?.fileNumber || screening.id;
+  const phoneNumber = screening.motherData?.phone || screening.motherData?.phoneNumber || 'N/A';
+  const actions = screening.referralPlan?.actions || screening.referralActions || [];
 
   const handleExport = () => {
     const doc = new jsPDF();
     
-    // Add header
+    // Header
     doc.setFillColor(46, 125, 50);
     doc.rect(0, 0, 210, 30, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.text('Maternawell Nigeria - Screening Report', 105, 15, { align: 'center' });
-    doc.setFontSize(12);
-    doc.text('Postpartum Depression Screening Results', 105, 24, { align: 'center' });
+    doc.setFontSize(18);
+    doc.text('Maternawell Nigeria - Clinical Screening Report', 105, 14, { align: 'center' });
+    doc.setFontSize(11);
+    doc.text('Edinburgh Postnatal Depression Scale (EPDS) • Nigerian Cutoff >= 9', 105, 23, { align: 'center' });
     
-    // Reset text color
     doc.setTextColor(0, 0, 0);
     
     // Patient Info
-    doc.setFontSize(14);
-    doc.text('Patient Information', 14, 45);
-    doc.setFontSize(11);
+    doc.setFontSize(13);
+    doc.text('Patient Demographics', 14, 42);
+    
     const patientData = [
-      ['File Number:', screening.motherData?.fileNumber || 'N/A'],
-      ['Name:', screening.motherData?.name || 'Anonymous'],
-      ['Age:', screening.motherData?.age?.toString() || 'N/A'],
-      ['Phone:', screening.motherData?.phone || 'N/A'],
-      ['Screening Date:', format(new Date(screening.createdAt), 'PPP p')],
+      ['File / ID Number:', fileNumber],
+      ['Patient Name:', patientName],
+      ['Age / Postpartum:', `${screening.motherData?.age || 'N/A'} yrs • ${screening.motherData?.weeksPostpartum || 'N/A'} weeks postpartum`],
+      ['Contact Phone:', phoneNumber],
+      ['Screening Timestamp:', format(new Date(screening.createdAt || screening.completedAt || Date.now()), 'PPP p')]
     ];
     
     autoTable(doc, {
-      startY: 50,
+      startY: 46,
       body: patientData,
       theme: 'plain',
-      columnStyles: { 0: { fontStyle: 'bold' } }
+      styles: { fontSize: 10, cellPadding: 2 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } }
     });
     
     // Score Section
-    const finalY = doc.lastAutoTable.finalY + 10;
-    doc.setFontSize(14);
-    doc.text('Screening Results', 14, finalY);
+    const finalY = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(13);
+    doc.text('Assessment & Classification', 14, finalY);
     
     doc.setFontSize(11);
-    doc.text(`EPDS Score: ${screening.score}`, 14, finalY + 10);
-    doc.text(`Risk Level: ${screening.riskTier?.label || 'N/A'}`, 14, finalY + 17);
+    doc.text(`EPDS Total Score: ${screening.score} / 30`, 14, finalY + 8);
+    doc.text(`Risk Tier: ${screening.riskTier?.label || 'N/A'}`, 14, finalY + 15);
     
     if (screening.hasSelfHarmRisk) {
       doc.setTextColor(220, 38, 38);
-      doc.text('⚠ SELF-HARM RISK DETECTED', 14, finalY + 24);
+      doc.setFont(undefined, 'bold');
+      doc.text('CRITICAL: Item 10 Self-Harm Ideation Reported (Mandatory Same-Day Escalation)', 14, finalY + 22);
+      doc.setFont(undefined, 'normal');
       doc.setTextColor(0, 0, 0);
     }
     
     // Referral Actions
-    const actionsY = finalY + 35;
-    doc.setFontSize(14);
-    doc.text('Recommended Actions', 14, actionsY);
+    const actionsY = finalY + (screening.hasSelfHarmRisk ? 32 : 24);
+    doc.setFontSize(13);
+    doc.text('Stepped-Care Referral Recommendations', 14, actionsY);
     
     doc.setFontSize(10);
-    screening.referralActions?.forEach((action, index) => {
-      doc.text(`• ${action}`, 14, actionsY + 10 + (index * 7));
+    actions.forEach((action, index) => {
+      doc.text(`• ${action}`, 14, actionsY + 7 + (index * 6.5));
     });
     
-    // Footer
+    // Non-Diagnosis Statutory Disclaimer (NFR-5)
     doc.setFontSize(9);
-    doc.setTextColor(128, 128, 128);
-    doc.text(`Generated on ${format(new Date(), 'PPP p')}`, 105, 280, { align: 'center' });
-    doc.text('Maternawell Nigeria - Confidential', 105, 285, { align: 'center' });
+    doc.setTextColor(198, 40, 40);
+    doc.text('STATUTORY NOTICE: This is a clinical screening result, not a definitive medical diagnosis.', 105, 274, { align: 'center' });
     
-    doc.save(`screening_${screening.motherData?.fileNumber || screening.id}.pdf`);
+    doc.setTextColor(128, 128, 128);
+    doc.text(`Generated under MeHPriC Protocol • Confidential Health Record • ${format(new Date(), 'PPP p')}`, 105, 282, { align: 'center' });
+    
+    doc.save(`maternawell_${fileNumber}.pdf`);
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 border border-gray-100 overflow-hidden"
+      className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 overflow-hidden flex flex-col justify-between"
     >
       <div className="p-5">
         <div className="flex justify-between items-start mb-3">
           <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${getRiskColor(screening.riskTier)}`} />
+            <div className={`w-3.5 h-3.5 rounded-full ${getRiskColor(screening.riskTier)}`} />
             <div>
-              <h3 className="font-semibold text-gray-900">
-                {screening.motherData?.isAnonymous ? 'Anonymous Screening' : screening.motherData?.name}
+              <h3 className="font-bold text-gray-900 leading-snug">
+                {patientName}
               </h3>
-              <p className="text-sm text-gray-500">File: {screening.motherData?.fileNumber}</p>
+              <p className="text-xs text-gray-500 font-mono">File: {fileNumber}</p>
             </div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(screening.status)}`}>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStatusColor(screening.status)}`}>
             {screening.status.replace('_', ' ').toUpperCase()}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs text-gray-500 mb-1">EPDS Score</p>
-            <p className="text-2xl font-bold text-gray-900">{screening.score ?? '-'}</p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-gray-50 rounded-lg p-2.5">
+            <p className="text-xs text-gray-500 mb-0.5 font-medium">EPDS Score</p>
+            <p className="text-xl font-bold text-gray-900">{screening.score ?? '-'} <span className="text-xs font-normal text-gray-500">/ 30</span></p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs text-gray-500 mb-1">Risk Level</p>
-            <p className="text-sm font-semibold text-gray-900">{screening.riskTier?.label ?? '-'}</p>
+          <div className="bg-gray-50 rounded-lg p-2.5">
+            <p className="text-xs text-gray-500 mb-0.5 font-medium">Classification</p>
+            <p className="text-sm font-bold text-gray-900">{screening.riskTier?.label ?? '-'}</p>
           </div>
         </div>
 
         {screening.hasSelfHarmRisk && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-            <span className="text-sm font-medium text-red-700">Self-harm risk detected - Requires immediate attention</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
-          <Clock className="w-3 h-3" />
-          <span>{format(new Date(screening.createdAt), 'PPp')}</span>
-        </div>
-
-        {screening.referralOutcome && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span className="text-sm font-medium text-green-700">
-                Referral Outcome: {screening.referralOutcome}
-              </span>
+          <div className="bg-red-50 border border-red-300 rounded-lg p-2.5 mb-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-red-800">
+              <span className="font-bold">Item-10 Escalation:</span> Same-day supervisor review required.
+              {screening.selfHarmAcknowledged ? (
+                <span className="text-green-700 font-semibold block mt-0.5">✓ Acknowledged by supervisor</span>
+              ) : (
+                <span className="text-red-700 font-semibold block mt-0.5">⚠ Pending supervisor review</span>
+              )}
             </div>
           </div>
         )}
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => onView(screening)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium"
-          >
-            <Eye className="w-4 h-4" />
-            View Details
-          </button>
-          <button
-            onClick={handleExport}
-            className="px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-            title="Export PDF"
-          >
-            <Download className="w-4 h-4" />
-          </button>
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+          <span className="flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" />
+            {format(new Date(screening.createdAt || Date.now()), 'PP p')}
+          </span>
+          <span className="flex items-center gap-1 text-gray-400">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            Screening result
+          </span>
+        </div>
+
+        {screening.referralOutcome && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-2 mb-3">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-green-800">
+              <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+              Follow-up: <span className="font-bold uppercase">{screening.referralOutcome}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
+        <button
+          onClick={() => onView && onView(screening)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 hover:text-gray-900 transition-colors text-xs font-semibold"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          Details
+        </button>
+        <button
+          onClick={handleExport}
+          className="py-2 px-3 bg-green-50 border border-green-300 text-green-800 rounded-lg hover:bg-green-100 transition-colors text-xs font-semibold flex items-center gap-1"
+          title="Export Medical PDF"
+        >
+          <Download className="w-3.5 h-3.5" />
+          PDF
+        </button>
+        {onDelete && (
           <button
             onClick={() => onDelete(screening.id)}
-            className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
-            title="Delete"
+            className="py-2 px-3 bg-white border border-gray-200 text-red-600 rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors text-xs"
+            title="Delete Record"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
-        </div>
+        )}
       </div>
     </motion.div>
   );
