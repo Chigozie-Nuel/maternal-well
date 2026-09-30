@@ -65,6 +65,7 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-2xl mx-auto"
       >
+        {import.meta.env.VITE_PUBLIC_DEMO === 'true' && <p role="note" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">Public prototype: use fictional answers only. Do not enter real medical or contact information; this demonstration is not monitored for care.</p>}
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold mb-3">

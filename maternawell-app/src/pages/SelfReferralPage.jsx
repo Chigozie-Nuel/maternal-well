@@ -168,6 +168,7 @@ const SelfReferralPage = () => {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-3xl mx-auto"
       >
+        {import.meta.env.VITE_PUBLIC_DEMO === 'true' && <p role="note" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">Public prototype: use fictional answers only. Do not enter real medical or contact information; this demonstration is not monitored for care.</p>}
         <button
           onClick={() => window.history.back()}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-6"

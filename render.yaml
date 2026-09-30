@@ -1,0 +1,31 @@
+# A paid Render web service is required because SQLite needs a persistent disk.
+# Use fictional data only when this public demonstration is deployed.
+services:
+  - type: web
+    name: maternawell-prototype
+    runtime: node
+    plan: starter
+    buildCommand: npm run setup && npm run build
+    startCommand: npm start --prefix server
+    healthCheckPath: /api/health
+    disk:
+      name: maternawell-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.15.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_HTTPS_PROXY
+        value: 'true'
+      - key: MATERNAWELL_DB
+        value: /var/data/maternawell.sqlite
+      - key: MATERNAWELL_DATA_KEY
+        sync: false
+      - key: MATERNAWELL_PUBLIC_DEMO
+        value: 'true'
+      - key: VITE_PUBLIC_DEMO
+        value: 'true'

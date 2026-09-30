@@ -42,6 +42,15 @@ const signIn = async () => {
   otherWorker = await login('HW-02', 'Worker02!2026');
 };
 
+test('production seeds prototype accounts only when public demo mode is explicit', () => {
+  for (const publicDemo of [false, true]) {
+    const instance = createApplication({ databasePath: ':memory:', production: true, dataKey: 'a'.repeat(64), publicDemo });
+    const count = instance.database.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+    assert.equal(count, publicDemo ? 9 : 0);
+    instance.database.close();
+  }
+});
+
 test('login rejects a wrong password and returns the role on success', async () => {
   assert.equal((await call('/api/auth/login', { body: { staffId: 'HW-01', password: 'nope' } })).status, 401);
   const ok = await call('/api/auth/login', { body: { staffId: 'SUP-01', password: 'Supervisor01!2026' } });
