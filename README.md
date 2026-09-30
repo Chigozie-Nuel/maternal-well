@@ -1,14 +1,17 @@
 # Maternawell Nigeria
 
-Offline-first postnatal depression screening and referral for Primary Health Centres (PHCs), built to the SRS in
-`Ndubuaku_Chigozie_Emmanuel_Assignment1_W4_08-01-2026 (1).pdf`.
+Offline-first postnatal depression screening and referral for Primary Health Centres (PHCs), built to the
+[Software Requirements Specification](<Ndubuaku_Chigozie_Emmanuel_Assignment1_W4_08-01-2026 (1).pdf>).
 
 A health worker screens a mother with the 10-item EPDS, one question per screen. The app scores against the Nigerian
 cutoff of 9, flags any Item-10 (self-harm) response for same-day supervisor acknowledgement, recommends a referral
-pathway, and tracks follow-up. Everything works without internet and syncs when a connection returns. Mothers can
-also screen themselves anonymously and be routed to a facility's referral queue.
+pathway, and tracks follow-up. After a staff member's first online sign-in on a device, screening can continue offline
+and sync when a connection returns. Mothers can also screen themselves anonymously and be routed to a facility's
+referral queue.
 
 > This is a screening tool, not a diagnostic tool. Published emergency numbers are included, but facilities must confirm availability locally. Validated Yoruba EPDS wording is not included (see *Known gaps*).
+
+For a complete inventory of the implemented prototype features, actors, workflows, and current limits, read the [feature document](Maternawell_Nigeria_Features.pdf).
 
 ## Set up from a fresh computer
 
@@ -46,11 +49,11 @@ also screen themselves anonymously and be routed to a facility's referral queue.
 6. Open **Prototype demo accounts** on the sign-in page. Select `HW-01` to fill its credentials, then sign in. Sign out and use `SUP-01` for the supervisor dashboard or `ADMIN-01` for the audit view. For the public mother flow, open **http://127.0.0.1:4000/self-referral**. Enter fictional details only.
 7. Stop the app with **Ctrl+C**. Local SQLite records and the development encryption key are created under `server/data/` and are ignored by Git. Keep the key with the database; losing it makes those records unreadable.
 
-To run the API and hot-reloading frontend in development, stop `npm start` first and run `npm run dev:all`. Open **http://localhost:3000**; the Vite dev server proxies API requests to port 4000. To run the full automated suite from the root, run `npm test`.
+To run the API and hot-reloading frontend in development, stop `npm start` first and run `npm run dev:all`. Open **http://localhost:3000**; the Vite dev server proxies API requests to port 4000. To run the full automated suite from the root, run `npm test`. The current suite contains **18 server tests and 40 app tests**.
 
 If port 4000 is already in use, stop the other process or set `PORT` before starting. In PowerShell: `$env:PORT=4100; npm start`. In macOS/Linux: `PORT=4100 npm start`. Use the matching port in the browser. If dependency installation fails, confirm the Node version and rerun `npm run setup`; this uses `npm ci` and does not require a root `node_modules` folder.
 
-### Demo accounts (seeded in development only)
+### Demo accounts (seeded locally and in explicit public-demo mode)
 
 | Staff ID | Password | Role | Facility |
 |---|---|---|---|
@@ -79,7 +82,7 @@ server/                     Node sync + referral API (node:sqlite, AES-256-GCM e
   with exponential backoff, and the server applies each change idempotently.
 - **Security:** device records are AES-GCM encrypted with a key derived from the staff password (PBKDF2, 210k iterations).
   The key only lives in memory, and the app locks after a reload or 10 idle minutes. Server rows are AES-256-GCM encrypted.
-  Every action is audited with the staff ID and time.
+  Key clinical and administrative actions are audited with the staff ID and time.
 - **Roles:** health workers screen and follow up. Supervisors acknowledge Item-10 flags and see facility-wide case status,
   but item-level answers only for escalated cases. Administrators read the audit trail.
 
@@ -98,7 +101,7 @@ The Android sign-in screen also accepts a facility HTTPS sync server URL at runt
 
 The root [`render.yaml`](render.yaml) is a Render Blueprint for a **paid Starter web service with a persistent disk**. SQLite records cannot survive restarts on Render's free web service. The Blueprint sets the build/start commands, HTTPS-proxy mode, health check, Node version, and an explicit public-demo mode. Its public accounts use the demo passwords above. **Only fictional screening data belongs on this deployment.** Do not use it to provide clinical care.
 
-1. Publish this repository as **Public** on GitHub. Check the repository link in a signed-out browser window before submitting it.
+1. This repository is **Public** on GitHub. Check the repository link in a signed-out browser window before submitting it; a working link today does not guarantee it stays public later.
 2. Create or sign in to a Render account. In the dashboard choose **New → Blueprint**, connect the GitHub repository, select its default branch, and use `render.yaml` from the repository root. Review the paid plan and disk cost before creating the service.
 3. When Render requests `MATERNAWELL_DATA_KEY`, generate a **new 32-byte hexadecimal key** locally and paste its 64 characters into the secret field. Keep it private and backed up. PowerShell: `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. macOS/Linux: the same Node command. Never commit the key or put it in a document.
 4. Create the Blueprint service. Wait for its deploy to be **Live**. Render provides a unique HTTPS `onrender.com` URL. Visit `<your URL>/api/health` and check for `"status":"ok"`.
