@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 
 const base = process.env.API_BASE || 'http://127.0.0.1:8787';
 const call = async (path, { token, body, method, origin } = {}) => {
@@ -46,6 +47,22 @@ assert.equal(acknowledged.body.acceptedIds.length, 1);
 const audit = await call('/api/admin/audit', { token: admin.body.token });
 assert.equal(audit.status, 200);
 assert.ok(audit.body.auditLogs.some(entry => entry.entityId === id));
+const anonymousId = randomUUID();
+const referral = await call('/api/self-referral', { body: {
+  id: anonymousId, anonymousCode: `MW-DEMO-${anonymousId.slice(0, 8).toUpperCase()}`,
+  facilityId: 'phc-ikeja', motherData: { consentGiven: true },
+  answers: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [index + 1, 0]))
+} });
+assert.equal(referral.status, 201);
+assert.equal(referral.body.screening.syncStatus, 'synced');
+const auditItem = { id: randomUUID(), entity: 'auditLog', entityId: id, action: 'CREATE', payload: { action: 'DEMO_CHECK', details: { note: 'fictional test'.repeat(100) } } };
+const compressed = await fetch(`${base}/api/sync/push`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${worker.body.token}`, 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
+  body: gzipSync(JSON.stringify({ items: [auditItem] }))
+});
+assert.equal(compressed.status, 200);
+assert.deepEqual((await compressed.json()).acceptedIds, [auditItem.id]);
 const cors = await call('/api/health', { origin: 'https://chigozie-nuel.github.io' });
 assert.equal(cors.headers.get('access-control-allow-origin'), 'https://chigozie-nuel.github.io');
-console.log('Cloudflare API smoke test passed: health, auth, sync, escalation, audit, CORS.');
+console.log('Cloudflare API smoke test passed: health, auth, sync, escalation, audit, anonymous referral, gzip, CORS.');

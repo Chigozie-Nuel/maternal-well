@@ -14,4 +14,4 @@ npx wrangler secret put MATERNAWELL_DATA_KEY
 npx wrangler deploy
 ```
 
-Supply a random 64-character hexadecimal value at the secret prompt and keep a private backup. For a local Worker, put `MATERNAWELL_DATA_KEY=<hex value>` in `.dev.vars`, apply the migrations with `--local`, and run `npx wrangler dev`. The integration smoke test uses `API_BASE=<Worker URL> node worker/smoke.mjs` and writes one explicitly fictional case. The local Node API and its test suite remain available under `server/`.
+Supply a random 64-character hexadecimal value at the secret prompt and keep a private backup. For a local Worker, put `MATERNAWELL_DATA_KEY=<hex value>` in `.dev.vars`, apply the migrations with `--local`, and run `npx wrangler dev`. The integration smoke test uses `API_BASE=<Worker URL> node worker/smoke.mjs` and writes explicitly fictional cases. Run `API_BASE=<Worker URL> node worker/cleanup-smoke.mjs` afterward to soft-delete only those test cases. The local Node API and its test suite remain available under `server/`.
