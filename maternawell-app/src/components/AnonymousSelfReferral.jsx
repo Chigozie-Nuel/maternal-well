@@ -207,11 +207,11 @@ const AnonymousSelfReferral = ({ onSubmit, onCancel }) => {
                 </p>
               </div>
 
-              <label className="flex items-start gap-3 text-sm text-gray-700">
+              {import.meta.env.VITE_PUBLIC_DEMO !== 'true' && <label className="flex items-start gap-3 text-sm text-gray-700">
                 <input type="checkbox" checked={formData.shareContact} onChange={e => setFormData(prev => ({ ...prev, shareContact: e.target.checked }))} />
                 I would like my chosen facility to contact me. Sharing contact details is optional and makes this referral identifiable.
-              </label>
-              {formData.shareContact && (
+              </label>}
+              {import.meta.env.VITE_PUBLIC_DEMO !== 'true' && formData.shareContact && (
                 <div>
                   <label htmlFor="self-referral-contact" className="block text-sm font-medium text-gray-700 mb-2">Phone or other contact detail</label>
                   <input id="self-referral-contact" required maxLength={200} value={formData.contactInfo} onChange={e => setFormData(prev => ({ ...prev, contactInfo: e.target.value }))} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />

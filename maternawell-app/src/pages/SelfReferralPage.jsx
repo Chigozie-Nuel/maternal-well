@@ -195,7 +195,7 @@ const SelfReferralPage = () => {
             </div>
             <h3 className="font-semibold text-gray-900 mb-2">Private & Confidential</h3>
             <p className="text-sm text-gray-600">
-              Your name is not required. Contact details are optional if you want your chosen facility to follow up with you.
+              {import.meta.env.VITE_PUBLIC_DEMO === 'true' ? 'This public prototype accepts fictional responses only and does not collect contact details.' : 'Your name is not required. Contact details are optional if you want your chosen facility to follow up with you.'}
             </p>
           </div>
 

@@ -1,7 +1,7 @@
 # Implementation summary and SRS traceability
 
-Status as of 26 September 2026. "Verified by" names an automated test, or the manual browser run done on this date
-against the live server. Tests: `server/test/api.test.mjs` (14) and `maternawell-app/src/test/*` (36).
+Status as of 30 September 2026. "Verified by" names an automated test, or the manual browser run done on 26 September 2026
+against the live server. The current automated suite passes 18 server tests and 40 app tests.
 
 ## Functional requirements
 
@@ -60,7 +60,7 @@ against the live server. Tests: `server/test/api.test.mjs` (14) and `maternawell
 
 - Android 8.0+: Capacitor project in `android/` (minSdk 26); debug APK built with `./gradlew assembleDebug`.
 - Local database: IndexedDB (Dexie), used as the on-device SQL-style store. Server: SQLite (`node:sqlite`).
-- HTTPS: production mode refuses to run without an HTTPS proxy (`TRUST_HTTPS_PROXY`).
+- HTTPS: production mode refuses to run without an HTTPS proxy (`TRUST_HTTPS_PROXY`). The Render Blueprint uses its managed HTTPS edge and persistent SQLite disk.
 - Language: English by default, draft Yoruba interface labels.
 
 ## Known gaps

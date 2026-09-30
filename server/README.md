@@ -21,4 +21,5 @@ npm test    # node:test suite
 Data is stored in `server/data/maternawell.sqlite`, with each row AES-256-GCM encrypted. The key is in
 `MATERNAWELL_DATA_KEY` or, in development, a generated `*.key` file next to the database.
 Development seeds three PHCs with a health worker, a supervisor and an admin each (see the root README).
+Production seeds no accounts unless `MATERNAWELL_PUBLIC_DEMO=true` is explicitly set for the public prototype; the demo uses the published sample credentials and must contain fictional data only. The Render Blueprint sets this mode and stores SQLite on a paid persistent disk. For a non-demo production service, provision approved staff accounts before use.
 Escalations are queued for the facility dashboard; a supervisor viewing it online receives the case on sync and can enable local device notifications. There is no background SMS or push gateway. Urgent offline cases require direct staff handoff.

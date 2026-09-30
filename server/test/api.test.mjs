@@ -51,6 +51,25 @@ test('production seeds prototype accounts only when public demo mode is explicit
   }
 });
 
+test('public demo behind an HTTPS proxy serves the app and accepts seeded login', async () => {
+  const instance = createApplication({ databasePath: ':memory:', production: true, trustProxy: true, dataKey: 'b'.repeat(64), publicDemo: true });
+  await new Promise(resolve => instance.server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${instance.server.address().port}`;
+  try {
+    assert.equal((await fetch(`${url}/api/health`)).status, 400);
+    const health = await fetch(`${url}/api/health`, { headers: { 'X-Forwarded-Proto': 'https' } });
+    assert.equal(health.status, 200);
+    const login = await fetch(`${url}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https' },
+      body: JSON.stringify({ staffId: 'HW-01', password: 'Worker01!2026' })
+    });
+    assert.equal(login.status, 200);
+    assert.equal((await login.json()).user.role, 'health_worker');
+  } finally {
+    await instance.close();
+  }
+});
+
 test('login rejects a wrong password and returns the role on success', async () => {
   assert.equal((await call('/api/auth/login', { body: { staffId: 'HW-01', password: 'nope' } })).status, 401);
   const ok = await call('/api/auth/login', { body: { staffId: 'SUP-01', password: 'Supervisor01!2026' } });
