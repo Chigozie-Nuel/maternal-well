@@ -1,6 +1,7 @@
-```
 # Dependencies
 node_modules/
+.wrangler/
+.dev.vars
 
 # Build outputs
 dist/
@@ -68,4 +69,3 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```

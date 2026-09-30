@@ -44,7 +44,7 @@ export default function AppLayout({ children }) {
       >
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">
-            <img className="sidebar-brand-image" src="/logo-mark.png" alt="Maternawell logo" width="48" height="48" />
+            <img className="sidebar-brand-image" src={`${import.meta.env.BASE_URL}logo-mark.png`} alt="Maternawell logo" width="48" height="48" />
             {sidebarOpen && (
               <div className="sidebar-brand-copy">
                 <h1>Maternawell</h1>

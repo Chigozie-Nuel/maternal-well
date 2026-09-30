@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, profile TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS refresh_tokens (token_hash TEXT PRIMARY KEY, profile TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS revisions (revision INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS screenings (id TEXT PRIMARY KEY, facility_id TEXT NOT NULL, worker_id TEXT, revision INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS screenings_facility_revision ON screenings(facility_id, revision);
+CREATE TABLE IF NOT EXISTS audit_log (id TEXT PRIMARY KEY, facility_id TEXT NOT NULL, user_id TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS audit_facility_revision ON audit_log(facility_id, revision);
+CREATE TABLE IF NOT EXISTS processed_operations (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, screening_id TEXT NOT NULL, facility_id TEXT NOT NULL, created_at TEXT NOT NULL, channel TEXT NOT NULL, delivery_status TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, until INTEGER NOT NULL);

@@ -1,0 +1,46 @@
+name: Deploy prototype to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-pages.yml'
+      - 'maternawell-app/**'
+      - 'worker/**'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: maternawell-app/package-lock.json
+      - run: npm ci --prefix maternawell-app
+      - run: npm run build --prefix maternawell-app
+        env:
+          VITE_GITHUB_PAGES: 'true'
+          VITE_PUBLIC_DEMO: 'true'
+          VITE_API_BASE: https://maternawell-prototype-api.tech-041.workers.dev
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: maternawell-app/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

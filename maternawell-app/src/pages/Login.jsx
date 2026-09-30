@@ -34,7 +34,7 @@ export function AuthCard({ title, subtitle, children }) {
       <div className="card w-full max-w-md p-6 sm:p-9">
         <div className="mb-6 text-center">
           {/* <div className="mx-auto mb-4 grid h-25 w-16 place-items-center rounded-2xl bg-gradient-to-br from-green-700 to-green-500 shadow-lg"> */}
-          <img src="/logo.png" alt="Maternawell logo" className="h-20 w-20" />
+          <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Maternawell logo" className="h-20 w-20" />
           {/* </div> */}
           <h1 className="text-2xl font-extrabold text-slate-900">{title}</h1>
           <p className="mt-1 text-sm text-slate-600">{subtitle}</p>

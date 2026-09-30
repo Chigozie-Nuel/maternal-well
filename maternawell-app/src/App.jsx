@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ScreeningProvider } from './context/ScreeningContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -38,7 +38,7 @@ class ErrorBoundary extends Component {
         <div className="card max-w-md p-6 text-center">
           <h1 className="mb-2 text-xl font-bold">Something went wrong on this screen</h1>
           <p className="mb-4 text-sm text-slate-600">Your saved screenings and answers are safe on this device. Reload to continue.</p>
-          <button type="button" className="btn btn-primary" onClick={() => window.location.assign('/')}>Reload</button>
+          <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>Reload</button>
         </div>
       </div>
     );
@@ -105,9 +105,10 @@ function Shell() {
 }
 
 export default function App() {
+  const Router = import.meta.env.VITE_GITHUB_PAGES === 'true' ? HashRouter : BrowserRouter;
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <Router>
         <LanguageProvider>
           <AuthProvider>
             <ScreeningProvider>
@@ -115,7 +116,7 @@ export default function App() {
             </ScreeningProvider>
           </AuthProvider>
         </LanguageProvider>
-      </BrowserRouter>
+      </Router>
     </ErrorBoundary>
   );
 }

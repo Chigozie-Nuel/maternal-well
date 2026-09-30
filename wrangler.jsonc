@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "maternawell-prototype-api",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-09-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "maternawell-prototype",
+      "database_id": "970e165e-4d34-475e-9f88-d694dbd481f8"
+    }
+  ],
+  "vars": {
+    "PUBLIC_DEMO": "true",
+    "ALLOWED_ORIGIN": "https://chigozie-nuel.github.io"
+  }
+}
