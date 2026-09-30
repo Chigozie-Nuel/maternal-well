@@ -3,8 +3,7 @@
   "appName": "Maternawell",
   "webDir": "dist",
   "server": {
-    "androidScheme": "http",
-    "cleartext": true
+    "androidScheme": "http"
   },
   "android": {
     "allowMixedContent": false

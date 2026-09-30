@@ -84,19 +84,26 @@ async function pushOutbox({ ownerId, token, key, role }) {
 
 async function pullChanges({ ownerId, token, key }) {
   const cursorKey = `cursor:${ownerId}`;
-  const since = (await getMeta(cursorKey)) || 0;
-  const data = await apiRequest(`/api/sync/pull?since=${since}`, { token });
-  const queued = new Set((await db.syncOutbox.where('ownerId').equals(ownerId).toArray()).map(item => item.entityId));
-  for (const record of data.screenings || []) {
-    if (queued.has(record.id)) continue;
-    if (record.deletedAt) await deleteCase(ownerId, record.id);
-    else await putCase(ownerId, { ...record, syncStatus: 'synced' }, key);
-  }
-  for (const entry of data.auditLogs || []) {
-    await putAudit(ownerId, { ...entry, syncStatus: 'synced', source: 'server' }, key);
-  }
-  await setMeta(cursorKey, data.cursor ?? since);
-  return { pulled: (data.screenings || []).length };
+  let since = (await getMeta(cursorKey)) || 0;
+  let pulled = 0;
+  do {
+    const data = await apiRequest(`/api/sync/pull?since=${since}`, { token });
+    const queued = new Set((await db.syncOutbox.where('ownerId').equals(ownerId).toArray()).map(item => item.entityId));
+    for (const record of data.screenings || []) {
+      if (queued.has(record.id)) continue;
+      if (record.deletedAt) await deleteCase(ownerId, record.id);
+      else await putCase(ownerId, { ...record, syncStatus: 'synced' }, key);
+    }
+    for (const entry of data.auditLogs || []) {
+      await putAudit(ownerId, { ...entry, syncStatus: 'synced', source: 'server' }, key);
+    }
+    pulled += (data.screenings || []).length;
+    if (data.hasMore && (!Number.isSafeInteger(data.cursor) || data.cursor <= since)) throw new Error('Server returned an invalid synchronization cursor.');
+    since = data.cursor ?? since;
+    await setMeta(cursorKey, since);
+    if (!data.hasMore) break;
+  } while (true);
+  return { pulled };
 }
 
 /** Anonymous self-referrals saved while offline; no staff session is needed to send them. */
@@ -133,9 +140,13 @@ export async function syncNow(context) {
   const summary = {};
   try {
     await flushSelfReferrals().catch(() => 0);
-    if (context?.ownerId && context.key && context.token && !state.authExpired) {
-      Object.assign(summary, await pushOutbox(context));
-      Object.assign(summary, await pullChanges(context));
+    if (context?.ownerId && context.key) {
+      let token = context.token;
+      if ((!token || state.authExpired) && context.renew) token = await context.renew();
+      if (!token) throw new Error('Sign in online to synchronize saved work.');
+      const authenticated = { ...context, token };
+      Object.assign(summary, await pushOutbox(authenticated));
+      Object.assign(summary, await pullChanges(authenticated));
     }
     state.serverReachable = true;
     state.lastSyncAt = new Date().toISOString();

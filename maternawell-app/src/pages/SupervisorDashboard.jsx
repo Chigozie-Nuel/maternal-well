@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ClipboardList, ShieldAlert, UserRoundSearch } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,8 @@ export default function SupervisorDashboard() {
   const { cases, stats, loaded } = useScreening();
   const [now, setNow] = useState(() => new Date());
   const [acknowledging, setAcknowledging] = useState(null);
+  const [notificationPermission, setNotificationPermission] = useState(() => typeof Notification === 'undefined' ? 'unavailable' : Notification.permission);
+  const alerted = useRef(new Set());
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000);
@@ -28,6 +30,19 @@ export default function SupervisorDashboard() {
   const escalations = cases
     .filter(item => ['pending', 'overdue'].includes(escalationState(item, now)))
     .sort((a, b) => String(a.escalationDueBy).localeCompare(String(b.escalationDueBy)));
+  useEffect(() => {
+    if (!loaded || notificationPermission !== 'granted') return;
+    for (const item of escalations) {
+      if (alerted.current.has(item.id)) continue;
+      alerted.current.add(item.id);
+      try {
+        new Notification('Maternawell: same-day escalation needs acknowledgement', {
+          body: `A case at ${user.facility} requires supervisor review today.`,
+          tag: `maternawell-${item.id}`
+        });
+      } catch { /* dashboard alert remains visible when device notifications are unsupported */ }
+    }
+  }, [cases, loaded, notificationPermission, user.facility]);
   const referrals = cases.filter(needsReferral);
   const active = referrals.filter(item => !['completed', 'lost_to_followup'].includes(item.referralOutcome || 'pending'));
   const overdue = escalations.filter(item => escalationState(item, now) === 'overdue').length;
@@ -36,6 +51,9 @@ export default function SupervisorDashboard() {
   return (
     <>
       <PageHeader title="Facility case dashboard" subtitle={`${user.facility} · follow-up status of every referral and all same-day escalations`} />
+
+      {notificationPermission === 'default' && <button type="button" className="btn btn-primary mb-4" onClick={async () => setNotificationPermission(await Notification.requestPermission())}>Enable same-day case alerts on this device</button>}
+      <p className="mb-4 text-sm text-slate-700">This dashboard updates while open and online. For an urgent case, staff must contact the supervisor directly; a device alert does not replace a verbal handoff.</p>
 
       {overdue > 0 && (
         <p role="alert" className="mb-4 flex items-center gap-2 rounded-2xl bg-red-700 p-4 font-bold text-white">

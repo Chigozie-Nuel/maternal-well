@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ClipboardList, FileText, HelpCircle, LayoutDashboard, LogOut, Menu, PlusCircle, ScrollText, ShieldCheck, X } from 'lucide-react';
+import { ClipboardList, HelpCircle, LayoutDashboard, LogOut, Menu, PlusCircle, ScrollText, ShieldCheck, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSelector, useLanguage } from '../context/LanguageContext';
 import SyncStatusChip from './SyncStatusChip';
@@ -44,7 +44,7 @@ export default function AppLayout({ children }) {
       >
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">
-            <div className="sidebar-brand-icon"><FileText size={24} color="white" aria-hidden="true" /></div>
+            <img className="sidebar-brand-image" src="/logo-mark.png" alt="Maternawell logo" width="48" height="48" />
             {sidebarOpen && (
               <div className="sidebar-brand-copy">
                 <h1>Maternawell</h1>
@@ -87,6 +87,7 @@ export default function AppLayout({ children }) {
       </motion.aside>
 
       <main className="dashboard-main" id="main">
+        {import.meta.env.VITE_PUBLIC_DEMO === 'true' && <p role="note" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-semibold text-amber-950">Public prototype · Fictional patient details only</p>}
         <header className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-7">
           <p className="text-sm font-semibold text-slate-700">{user?.facility}</p>
           <div className="flex flex-wrap items-center gap-3">

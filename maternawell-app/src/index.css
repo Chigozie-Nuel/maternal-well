@@ -78,15 +78,11 @@ body {
   gap: 12px;
 }
 
-.sidebar-brand-icon {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.sidebar-brand-image {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: contain;
 }
 
 .sidebar-brand-copy {
@@ -239,6 +235,12 @@ body {
 }
 
 @media (max-width: 760px) {
+  .sidebar-brand-image {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
   .dashboard-sidebar {
     width: 76px !important;
     padding: 16px 12px;

@@ -9,7 +9,8 @@ npm test    # node:test suite
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /api/auth/login` | – | Staff login → `{ user, token, expiresAt }` (8 h session) |
+| `POST /api/auth/login` | – | Staff login → short-lived access and rotating refresh credentials |
+| `POST /api/auth/refresh` | – | Exchange a refresh credential once for a new pair (7-day maximum lifetime per credential) |
 | `POST /api/auth/logout` | staff | End session |
 | `POST /api/sync/push` | staff | Batch ≤ 50 operations: `CREATE`, `FOLLOW_UP`, `SAFETY_CONFIRM`, `ACKNOWLEDGE`, `DELETE`, audit `CREATE`. Idempotent by operation id; gzip accepted |
 | `GET /api/sync/pull?since=` | staff | Facility changes since a revision cursor (supervisors get restricted records) |
@@ -20,4 +21,4 @@ npm test    # node:test suite
 Data is stored in `server/data/maternawell.sqlite`, with each row AES-256-GCM encrypted. The key is in
 `MATERNAWELL_DATA_KEY` or, in development, a generated `*.key` file next to the database.
 Development seeds three PHCs with a health worker, a supervisor and an admin each (see the root README).
-Escalation notifications are recorded, not sent (mock gateway).
+Escalations are queued for the facility dashboard; a supervisor viewing it online receives the case on sync and can enable local device notifications. There is no background SMS or push gateway. Urgent offline cases require direct staff handoff.

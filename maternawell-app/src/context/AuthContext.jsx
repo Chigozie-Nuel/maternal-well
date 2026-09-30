@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { apiRequest, ApiError, NetworkError } from '../config/api';
-import { createKeyCheck, deriveKey, generateSalt, getSessionKey, setSessionKey, verifyKeyCheck, wipeSession } from '../utils/crypto';
+import { apiRequest, ApiError, getApiBase, NetworkError } from '../config/api';
+import { createKeyCheck, decryptData, deriveKey, encryptData, generateSalt, getSessionKey, setSessionKey, verifyKeyCheck, wipeSession } from '../utils/crypto';
 import { getSyncState, markAuthRestored } from '../db/sync';
+import { migrateLegacyForUser } from '../db/db';
 
 /**
  * Staff authentication (SRS FR-14).
@@ -37,7 +38,14 @@ async function unlockAccount(staffId, password) {
 }
 
 export const AuthProvider = ({ children }) => {
-  const [session, setSession] = useState(() => readJson(SESSION_KEY));
+  const [session, setSession] = useState(() => {
+    const saved = readJson(SESSION_KEY);
+    if (saved?.token) writeJson(SESSION_KEY, { user: saved.user });
+    try { localStorage.removeItem('maternawell_token'); } catch { /* storage unavailable */ }
+    return saved?.user ? { user: saved.user } : null;
+  });
+  const [access, setAccess] = useState(null);
+  const [migrationWarning, setMigrationWarning] = useState(null);
   const [status, setStatus] = useState(() => (readJson(SESSION_KEY) ? (getSessionKey() ? 'ready' : 'locked') : 'signed_out'));
 
   useEffect(() => {
@@ -47,21 +55,65 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const startSession = (user, token, expiresAt, key) => {
-    const next = { user, token, expiresAt, offline: !token };
+    const next = { user };
     writeJson(SESSION_KEY, next);
     setSessionKey(key);
     setSession(next);
+    setAccess(token ? { token, expiresAt } : null);
     setStatus('ready');
-    markAuthRestored();
+    if (token) markAuthRestored();
     return next;
   };
+
+  const saveRefresh = async (staffId, key, credentials) => {
+    if (!credentials.refreshToken) return;
+    const account = readJson(accountKey(staffId));
+    writeJson(accountKey(staffId), {
+      ...account,
+      refresh: await encryptData({ token: credentials.refreshToken, expiresAt: credentials.refreshExpiresAt, server: getApiBase() }, key)
+    });
+  };
+
+  const recoverLegacy = async (user, password, key) => {
+    try {
+      const { retained } = await migrateLegacyForUser(user, password, key);
+      setMigrationWarning(retained ? `${retained} older record(s) could not be assigned or decrypted and remain on this device for recovery.` : null);
+    } catch (error) {
+      setMigrationWarning(`Older records remain on this device because import failed: ${error.message}`);
+    }
+  };
+
+  const renew = useCallback(async () => {
+    const staffId = session?.user?.staffId;
+    const key = getSessionKey();
+    const account = staffId && readJson(accountKey(staffId));
+    if (!key || !account?.refresh) throw new Error('Sign in online to restore synchronization. Saved work is still on this device.');
+    const stored = await decryptData(account.refresh, key);
+    if (stored.server !== undefined && stored.server !== getApiBase()) throw new Error('Facility server changed. Sign in online before synchronizing saved work.');
+    if (stored.expiresAt <= Date.now()) throw new Error('Offline session expired. Sign in online to synchronize saved work.');
+    try {
+      const credentials = await apiRequest('/api/auth/refresh', { body: { refreshToken: stored.token } });
+      await saveRefresh(staffId, key, credentials);
+      setSession({ user: credentials.user });
+      setAccess({ token: credentials.token, expiresAt: credentials.expiresAt });
+      markAuthRestored();
+      return credentials.token;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        writeJson(accountKey(staffId), { ...account, refresh: null });
+        throw new Error('Session was revoked or expired. Sign in online to synchronize saved work.');
+      }
+      throw error;
+    }
+  }, [session]);
 
   /** Returns the signed-in user; throws with a user-facing message on failure. */
   const login = useCallback(async (rawStaffId, password) => {
     const staffId = rawStaffId.trim().toUpperCase();
     if (!staffId || !password) throw new Error('Enter your staff ID and password.');
     try {
-      const { user, token, expiresAt } = await apiRequest('/api/auth/login', { body: { staffId, password } });
+      const credentials = await apiRequest('/api/auth/login', { body: { staffId, password } });
+      const { user, token, expiresAt } = credentials;
       const existing = readJson(accountKey(staffId));
       let key;
       let account = existing;
@@ -73,6 +125,8 @@ export const AuthProvider = ({ children }) => {
         account = { salt, check: await createKeyCheck(key) };
       }
       writeJson(accountKey(staffId), { ...account, user });
+      await saveRefresh(staffId, key, credentials);
+      await recoverLegacy(user, password, key);
       return startSession(user, token, expiresAt, key).user;
     } catch (error) {
       if (!(error instanceof NetworkError)) {
@@ -84,6 +138,7 @@ export const AuthProvider = ({ children }) => {
           ? 'Staff ID or password is incorrect.'
           : 'You are offline. The first sign-in on a device needs an internet connection.');
       }
+      await recoverLegacy(unlocked.account.user, password, unlocked.key);
       return startSession(unlocked.account.user, null, null, unlocked.key).user;
     }
   }, []);
@@ -94,32 +149,47 @@ export const AuthProvider = ({ children }) => {
     if (!staffId) throw new Error('Please sign in again.');
     const unlocked = await unlockAccount(staffId, password);
     if (!unlocked) throw new Error('Password is incorrect.');
-    let { token, expiresAt } = session;
-    if (!token || !expiresAt || expiresAt < Date.now() + 60 * 1000 || getSyncState().authExpired) {
-      try { ({ token, expiresAt } = await apiRequest('/api/auth/login', { body: { staffId, password } })); }
-      catch { /* stay offline-capable; sync resumes after the next online sign-in */ }
+    let credentials = access;
+    if (!credentials?.token || credentials.expiresAt < Date.now() + 60 * 1000 || getSyncState().authExpired) {
+      try {
+        credentials = await apiRequest('/api/auth/login', { body: { staffId, password } });
+        await saveRefresh(staffId, unlocked.key, credentials);
+      } catch (error) {
+        if (!(error instanceof NetworkError)) throw error;
+        credentials = null;
+      }
     }
-    startSession(session.user, token, expiresAt, unlocked.key);
-  }, [session]);
+    await recoverLegacy(session.user, password, unlocked.key);
+    startSession(session.user, credentials?.token, credentials?.expiresAt, unlocked.key);
+  }, [session, access]);
 
   const logout = useCallback(async () => {
-    const token = session?.token;
+    const token = access?.token;
+    const staffId = session?.user?.staffId;
+    const account = staffId && readJson(accountKey(staffId));
+    let refreshToken = null;
+    try { if (account?.refresh && getSessionKey()) refreshToken = (await decryptData(account.refresh, getSessionKey())).token; } catch { /* already locked */ }
+    if (account) writeJson(accountKey(staffId), { ...account, refresh: null });
     wipeSession();
     writeJson(SESSION_KEY, null);
     setSession(null);
+    setAccess(null);
+    setMigrationWarning(null);
     setStatus('signed_out');
-    if (token) apiRequest('/api/auth/logout', { token, body: {} }).catch(() => {});
-  }, [session]);
+    if (token) apiRequest('/api/auth/logout', { token, body: { refreshToken } }).catch(() => {});
+  }, [session, access]);
 
   const value = useMemo(() => ({
     user: session?.user || null,
-    token: session?.token && session.expiresAt > Date.now() ? session.token : null,
+    token: access?.token && access.expiresAt > Date.now() ? access.token : null,
+    renew,
+    migrationWarning,
     status,
     isAuthenticated: status === 'ready',
     login,
     unlock,
     logout
-  }), [session, status, login, unlock, logout]);
+  }), [session, access, status, login, unlock, logout, renew, migrationWarning]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

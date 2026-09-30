@@ -1,35 +1,28 @@
 /**
  * Maternawell Nigeria - Crisis Contacts Configuration
  * 
- * In compliance with Rule 4:
- * Do NOT invent phone numbers. Mark crisis contacts with verified: false
- * and display "Number pending verification" in the UI until official lines are confirmed.
+ * Publicly published contacts. A published number is not proof of live service;
+ * facilities must confirm local availability before relying on it in an emergency.
  */
 
 export const CRISIS_CONTACTS = [
   {
-    id: 'nigeria-suicide-prevention',
-    name: 'National Suicide Prevention Helpline (Nigeria)',
-    phone: '0800-PENDING',
-    available: '24/7',
-    verified: false,
-    notes: 'Official toll-free line pending national emergency directory integration.'
+    id: 'national-emergency',
+    name: 'Nigeria emergency response',
+    phone: '112',
+    available: 'Availability varies by location',
+    verified: true,
+    sourceUrl: 'https://statehouse.gov.ng/nec-moves-to-strengthen-national-emergency-response-okays-112-as-lifeline/',
+    notes: 'Officially adopted national emergency number. Rollout is ongoing; proceed to the nearest emergency facility if unavailable.'
   },
   {
     id: 'lagos-lifeline',
     name: 'Lagos Lifeline Mental Health Helpline',
-    phone: '0800-000-0000',
-    available: '24/7',
-    verified: false,
-    notes: 'Lagos State Ministry of Health mental health support service - pending confirmation.'
-  },
-  {
-    id: 'luth-psychiatry-emergency',
-    name: 'LUTH Department of Psychiatry Emergency Unit',
-    phone: 'Pending Verification',
-    available: 'Emergency Duty Hours',
-    verified: false,
-    notes: 'Tertiary psychiatric escalation point for MeHPriC stepped-care model.'
+    phone: '07000006463',
+    available: 'Confirm current hours with the service',
+    verified: true,
+    sourceUrl: 'https://lagosstate.gov.ng/news/Health%20Services/view/6722bfa71415802f26321399',
+    notes: 'Lagos State published Lifeline number. Facility staff should confirm operational hours and an alternative emergency route.'
   }
 ];
 

@@ -132,6 +132,7 @@ describe('Staff sign-in (FR-14)', () => {
     fireEvent.click(screen.getByText('good'));
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('ready'));
     expect(screen.getByTestId('role')).toHaveTextContent('health_worker');
+    expect(localStorage.getItem('maternawell_session')).not.toContain('xxxxxxxx');
     await act(async () => { fireEvent.click(screen.getByText('out')); });
     expect(screen.getByTestId('status')).toHaveTextContent('signed_out');
 

@@ -54,6 +54,18 @@ test('API requires authentication', async () => {
   assert.equal((await call('/api/sync/pull')).status, 401);
 });
 
+test('refresh credentials rotate, cannot be replayed, and can be revoked on logout', async () => {
+  const signedIn = (await call('/api/auth/login', { body: { staffId: 'HW-01', password: 'Worker01!2026' } })).body;
+  assert.ok(signedIn.refreshToken);
+  const refreshed = await call('/api/auth/refresh', { body: { refreshToken: signedIn.refreshToken } });
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.user.staffId, 'HW-01');
+  assert.equal((await call('/api/auth/refresh', { body: { refreshToken: signedIn.refreshToken } })).status, 401);
+  assert.equal((await call('/api/sync/pull', { token: refreshed.body.token })).status, 200);
+  await call('/api/auth/logout', { token: refreshed.body.token, body: { refreshToken: refreshed.body.refreshToken } });
+  assert.equal((await call('/api/auth/refresh', { body: { refreshToken: refreshed.body.refreshToken } })).status, 401);
+});
+
 test('server re-scores EPDS and ignores client-supplied scores', async () => {
   const record = screening([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], { score: 30 });
   const result = await push(worker, [op(record.id, 'CREATE', record)]);
@@ -192,4 +204,20 @@ test('gzip request bodies are accepted for low-bandwidth sync', async () => {
     body: gzipSync(JSON.stringify({ items: [op(record.id, 'CREATE', record)] }))
   });
   assert.equal((await response.json()).acceptedIds.length, 1);
+});
+
+test('pull responses page revision history and support gzip', async () => {
+  const auditItems = Array.from({ length: 110 }, () => ({ id: randomUUID(), entity: 'auditLog', entityId: randomUUID(), action: 'CREATE', payload: { action: 'SCREENING_STARTED' } }));
+  for (let offset = 0; offset < auditItems.length; offset += 50) {
+    assert.equal((await push(worker, auditItems.slice(offset, offset + 50))).body.acceptedIds.length, Math.min(50, auditItems.length - offset));
+  }
+  const first = await call('/api/sync/pull?since=0', { token: worker });
+  assert.equal(first.body.hasMore, true);
+  assert.ok(first.body.cursor > 0);
+  const second = await call(`/api/sync/pull?since=${first.body.cursor}`, { token: worker });
+  assert.ok(second.body.cursor > first.body.cursor);
+  const compressed = await fetch(`${base}/api/sync/pull?since=${first.body.cursor}`, { headers: { Authorization: `Bearer ${worker}`, 'Accept-Encoding': 'gzip' } });
+  assert.equal(compressed.status, 200);
+  assert.equal(compressed.headers.get('content-encoding'), 'gzip');
+  assert.ok((await compressed.json()).cursor > 0);
 });

@@ -67,7 +67,7 @@ function Home() {
 }
 
 function Shell() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, migrationWarning } = useAuth();
 
   // Deliver self-referrals queued on this phone while it was offline, even if no staff member signs in.
   useEffect(() => {
@@ -81,6 +81,7 @@ function Shell() {
   const STAFF = ['health_worker', 'supervisor'];
   return (
     <>
+      {isAuthenticated && migrationWarning && <div role="alert" className="bg-amber-100 px-4 py-3 text-sm font-semibold text-amber-950">{migrationWarning} Do not clear this app's storage; ask the facility administrator for help.</div>}
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />

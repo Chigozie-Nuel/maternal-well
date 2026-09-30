@@ -10,6 +10,7 @@ import { escalationDueBy, isUrgent } from '../maternawell-app/src/domain/escalat
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_MS = 8 * 60 * 60 * 1000;
+const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const BODY_LIMIT = 1024 * 1024;
 export const FOLLOW_UP_STATUSES = ['pending', 'contacted', 'completed', 'lost_to_followup'];
 // Kept in step with the public facility directory in the client.
@@ -73,6 +74,7 @@ export function createApplication(options = {}) {
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, staff_id TEXT UNIQUE NOT NULL, salt TEXT NOT NULL, password_hash TEXT NOT NULL, profile TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS refresh_tokens (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS revisions (revision INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS screenings (id TEXT PRIMARY KEY, facility_id TEXT NOT NULL, worker_id TEXT, revision INTEGER NOT NULL, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS screenings_facility_revision ON screenings(facility_id, revision);
@@ -93,7 +95,8 @@ export function createApplication(options = {}) {
     decipher.setAuthTag(tag);
     return JSON.parse(Buffer.concat([decipher.update(body), decipher.final()]).toString('utf8'));
   };
-  const seedAccounts = options.seedAccounts ?? (production ? [] : DEMO_CREDENTIALS);
+  const publicDemo = options.publicDemo ?? process.env.MATERNAWELL_PUBLIC_DEMO === 'true';
+  const seedAccounts = options.seedAccounts ?? (!production || publicDemo ? DEMO_CREDENTIALS : []);
   for (const account of seedAccounts) {
     if (database.prepare('SELECT id FROM users WHERE staff_id = ?').get(account.staffId)) continue;
     const facility = FACILITIES.find(entry => entry.id === account.facilityId);
@@ -129,8 +132,8 @@ export function createApplication(options = {}) {
   };
   const notifyEscalation = record => {
     if (!record.hasSelfHarmRisk && record.score < 13) return;
-    database.prepare('INSERT INTO notifications VALUES (?, ?, ?, ?, ?, ?)').run(randomUUID(), record.id, record.facilityId, now(), 'mock_facility_supervisor', 'mock_recorded_not_sent');
-    audit({ id: 'system', facilityId: record.facilityId }, 'ESCALATION_NOTIFICATION_RECORDED', record.id, { channel: 'mock_facility_supervisor', deliveryStatus: 'mock_recorded_not_sent' });
+    database.prepare('INSERT INTO notifications VALUES (?, ?, ?, ?, ?, ?)').run(randomUUID(), record.id, record.facilityId, now(), 'facility_dashboard', 'queued_for_supervisor');
+    audit({ id: 'system', facilityId: record.facilityId }, 'ESCALATION_NOTIFICATION_QUEUED', record.id, { channel: 'facility_dashboard', deliveryStatus: 'queued_for_supervisor' });
   };
   const validateAndCreate = (payload, user, anonymous = false) => {
     reject(!object(payload), 400, 'Screening payload must be an object.');
@@ -284,6 +287,17 @@ export function createApplication(options = {}) {
     reject(!row, 401, 'Session has expired or is invalid.');
     return JSON.parse(row.profile);
   };
+  const issueSession = user => {
+    const token = randomBytes(32).toString('base64url');
+    const refreshToken = randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + SESSION_MS;
+    const refreshExpiresAt = Date.now() + REFRESH_MS;
+    database.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
+    database.prepare('DELETE FROM refresh_tokens WHERE expires_at <= ?').run(Date.now());
+    database.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(hash(token), user.id, expiresAt);
+    database.prepare('INSERT INTO refresh_tokens VALUES (?, ?, ?)').run(hash(refreshToken), user.id, refreshExpiresAt);
+    return { token, expiresAt, refreshToken, refreshExpiresAt };
+  };
   const readBody = async request => {
     let size = 0;
     const chunks = [];
@@ -304,7 +318,7 @@ export function createApplication(options = {}) {
   const json = (response, status, body) => {
     let payload = Buffer.from(JSON.stringify(body));
     const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Vary': 'Origin, Accept-Encoding' };
-    if (payload.length > 1024 && /gzip/.test(response.req?.headers['accept-encoding'] || '')) {
+    if (payload.length > 1024 && /\bgzip\b/.test(response.req?.headers['accept-encoding'] || '')) {
       payload = gzipSync(payload);
       headers['Content-Encoding'] = 'gzip';
     }
@@ -326,7 +340,7 @@ export function createApplication(options = {}) {
       if (request.method === 'OPTIONS') { response.writeHead(204); return response.end(); }
       const url = new URL(request.url, 'http://localhost');
       if (production && options.trustProxy && request.headers['x-forwarded-proto'] !== 'https') throw new ApiError(400, 'HTTPS is required.');
-      if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { status: 'ok', notificationMode: 'mock' });
+      if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { status: 'ok', notificationMode: 'facility_dashboard' });
       if (request.method === 'GET' && url.pathname === '/api/facilities') return json(response, 200, { facilities: FACILITIES });
       if (request.method === 'POST' && url.pathname === '/api/auth/login') {
         rateLimit(request, 'login', 30);
@@ -336,12 +350,24 @@ export function createApplication(options = {}) {
         reject(!row || !timingSafeEqual(candidate, Buffer.from(row.password_hash, 'hex')), 401, 'Invalid staff ID or password.');
         const user = JSON.parse(row.profile);
         reject(body.facilityId && body.facilityId !== user.facilityId, 403, 'Staff account belongs to another facility.');
-        const token = randomBytes(32).toString('base64url');
-        const expiresAt = Date.now() + SESSION_MS;
-        database.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
-        database.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(hash(token), user.id, expiresAt);
+        const credentials = issueSession(user);
         audit(user, 'STAFF_LOGIN', user.id);
-        return json(response, 200, { user, token, expiresAt });
+        return json(response, 200, { user, ...credentials });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/auth/refresh') {
+        rateLimit(request, 'refresh', 60);
+        const body = await readBody(request);
+        const refreshToken = typeof body.refreshToken === 'string' ? body.refreshToken : '';
+        reject(!/^[A-Za-z0-9_-]{43}$/.test(refreshToken), 401, 'Refresh credential is invalid.');
+        const result = transaction(() => {
+          const row = database.prepare('SELECT users.profile FROM refresh_tokens JOIN users ON users.id = refresh_tokens.user_id WHERE token_hash = ? AND expires_at > ?').get(hash(refreshToken), Date.now());
+          reject(!row, 401, 'Refresh credential has expired or was revoked.');
+          database.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').run(hash(refreshToken));
+          const user = JSON.parse(row.profile);
+          return { user, ...issueSession(user) };
+        });
+        audit(result.user, 'STAFF_SESSION_REFRESHED', result.user.id);
+        return json(response, 200, result);
       }
       if (request.method === 'POST' && url.pathname === '/api/self-referral') {
         rateLimit(request, 'self-referral', 20);
@@ -362,7 +388,9 @@ export function createApplication(options = {}) {
       if (url.pathname.startsWith('/api/')) {
         const user = authenticate(request);
         if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+          const body = await readBody(request);
           database.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash(request.headers.authorization.slice(7)));
+          if (typeof body.refreshToken === 'string') database.prepare('DELETE FROM refresh_tokens WHERE token_hash = ? AND user_id = ?').run(hash(body.refreshToken), user.id);
           return json(response, 200, { ok: true });
         }
         if (request.method === 'GET' && url.pathname === '/api/auth/me') return json(response, 200, { user });
@@ -380,10 +408,16 @@ export function createApplication(options = {}) {
           reject(url.searchParams.get('facilityId') && url.searchParams.get('facilityId') !== user.facilityId, 403, 'Cannot read another facility.');
           const since = Number(url.searchParams.get('since') || 0);
           reject(!Number.isSafeInteger(since) || since < 0, 400, 'Invalid synchronization cursor.');
-          const cursor = Number(database.prepare('SELECT COALESCE(MAX(revision), 0) AS revision FROM revisions').get().revision);
+          const page = database.prepare(`SELECT revision FROM (
+            SELECT revision FROM screenings WHERE facility_id = ?
+            UNION ALL
+            SELECT revision FROM audit_log WHERE facility_id = ? AND (? = 'admin' OR user_id = ?)
+          ) WHERE revision > ? ORDER BY revision LIMIT 101`).all(user.facilityId, user.facilityId, user.role, user.id, since);
+          const cursor = page.length ? Number(page[Math.min(page.length, 100) - 1].revision) : since;
+          const hasMore = page.length > 100;
           const screenings = database.prepare('SELECT data FROM screenings WHERE facility_id = ? AND revision > ? AND revision <= ? ORDER BY revision').all(user.facilityId, since, cursor).map(row => restrictedRecord(decrypt(row.data), user));
-          const auditLogs = database.prepare('SELECT data FROM audit_log WHERE facility_id = ? AND revision > ? AND revision <= ? ORDER BY revision').all(user.facilityId, since, cursor).map(row => decrypt(row.data)).filter(entry => user.role === 'admin' || entry.userId === user.id);
-          return json(response, 200, { screenings, auditLogs, cursor });
+          const auditLogs = database.prepare("SELECT data FROM audit_log WHERE facility_id = ? AND revision > ? AND revision <= ? AND (? = 'admin' OR user_id = ?) ORDER BY revision").all(user.facilityId, since, cursor, user.role, user.id).map(row => decrypt(row.data));
+          return json(response, 200, { screenings, auditLogs, cursor, hasMore });
         }
         if (request.method === 'GET' && url.pathname === '/api/admin/audit') {
           reject(user.role !== 'admin', 403, 'Administrator access is required.');
@@ -425,8 +459,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const production = process.env.NODE_ENV === 'production';
   const trustProxy = process.env.TRUST_HTTPS_PROXY === 'true';
   if (production && !trustProxy) throw new Error('Production requires HTTPS termination and TRUST_HTTPS_PROXY=true.');
-  if (production && !['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('Bind the application to loopback behind the HTTPS proxy.');
+  if (production && !['127.0.0.1', '::1', 'localhost'].includes(host) && !(process.env.RENDER === 'true' && host === '0.0.0.0')) throw new Error('Bind to loopback, or to 0.0.0.0 on Render behind its HTTPS proxy.');
   const application = createApplication({ production, trustProxy });
-  application.server.listen(Number(process.env.PORT || 4000), host, () => console.log(`Maternawell API listening on http://${host}:${process.env.PORT || 4000}; escalation notifications are MOCK ONLY.`));
+  application.server.listen(Number(process.env.PORT || 4000), host, () => console.log(`Maternawell API listening on http://${host}:${process.env.PORT || 4000}; escalation channel: facility dashboard.`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => application.server.close(() => process.exit(0)));
 }

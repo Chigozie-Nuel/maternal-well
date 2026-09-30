@@ -31,6 +31,7 @@ const SelfReferralPage = () => {
   const [result, setResult] = useState(null);
 
   const handleSubmit = async (data) => {
+    if (import.meta.env.VITE_PUBLIC_DEMO === 'true' && data.contactInfo?.trim()) throw new Error('Do not enter real contact information in the public prototype.');
     setResult(await submitSelfReferral({
       facilityId: data.facilityId,
       answers: data.answers,

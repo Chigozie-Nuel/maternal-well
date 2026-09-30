@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { scoreEpds, classifyRisk, isEscalation, getReferralPlan, HIGH_RISK_CUTOFF, NIGERIAN_EPDS_CUTOFF } from '../domain/epds';
 import { escalationDueBy, escalationState, isUrgent } from '../domain/escalation';
-import { deleteCase, deleteDraft, enqueueOperation, listAudit, listCases, listDrafts, purgeLegacyPlaintext, putAudit, putCase, putDraft } from '../db/db';
+import { deleteCase, deleteDraft, enqueueOperation, listAudit, listCases, listDrafts, putAudit, putCase, putDraft } from '../db/db';
 import { getSyncState, outboxSummary, retryFailed, startSyncScheduler, subscribeSync, syncNow } from '../db/sync';
 import { getSessionKey } from '../utils/crypto';
 import { useAuth } from './AuthContext';
@@ -56,7 +56,7 @@ export function buildCompletedScreening(draft, answers, user) {
 }
 
 export const ScreeningProvider = ({ children }) => {
-  const { user, token, status } = useAuth();
+  const { user, token, status, renew } = useAuth();
   const ownerId = status === 'ready' ? user?.id : null;
   const [cases, setCases] = useState([]);
   const [drafts, setDrafts] = useState([]);
@@ -67,7 +67,7 @@ export const ScreeningProvider = ({ children }) => {
   const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const busyRef = useRef(false);
   const contextRef = useRef(null);
-  contextRef.current = { ownerId, token, key: getSessionKey(), role: user?.role };
+  contextRef.current = { ownerId, token, key: getSessionKey(), role: user?.role, renew };
 
   const key = () => {
     const sessionKey = getSessionKey();
@@ -87,8 +87,6 @@ export const ScreeningProvider = ({ children }) => {
     setSync(previous => ({ ...previous, ...getSyncState(), ...summary }));
     setLoaded(true);
   }, []);
-
-  useEffect(() => { purgeLegacyPlaintext(); }, []);
 
   useEffect(() => {
     const online = () => setIsOnline(true);

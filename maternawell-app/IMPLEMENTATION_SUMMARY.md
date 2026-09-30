@@ -15,7 +15,7 @@ against the live server. Tests: `server/test/api.test.mjs` (14) and `maternawell
 | FR-6 | Referral per tier | `getReferralPlan`: community/peer · PHC counselling · immediate psychiatric | epds.test; api.test |
 | FR-7 | Recommendation shown immediately | `Results.jsx` renders the stored plan right after question 10 | flow.test; browser run |
 | FR-8 | Save completed screenings offline | `src/db/db.js` encrypted IndexedDB, drafts saved after every answer | db.test; flow.test resume; browser run with server stopped |
-| FR-9 | Auto-sync when online | `src/db/sync.js` outbox (on reconnect, every 30 s, after each write) | sync.test; browser run: offline case synced on reconnect |
+| FR-9 | Auto-sync when online | `src/db/sync.js` outbox (on reconnect, every 30 s, after each write), encrypted rotating refresh credential | sync.test reconnect/pagination; browser run: offline case synced on reconnect |
 | FR-10 | Follow-up pending / contacted / completed | `CaseDetail.jsx` follow-up form + history; server `FOLLOW_UP` (+ lost to follow-up) | api.test follow-up; browser run |
 | FR-11 | Follow-up on the facility dashboard | `SupervisorDashboard.jsx` follow-up breakdown, active referrals, days open | browser run |
 | FR-12 | Anonymous self-screening | `/self-referral`, `AnonymousSelfReferral.jsx`, no name collected | epds.test B2; browser run |
@@ -30,7 +30,7 @@ against the live server. Tests: `server/test/api.test.mjs` (14) and `maternawell
 | NFR-1 | Scoring < 1 s | Pure synchronous scoring | epds.test (< 50 ms) |
 | NFR-2 | Sync over 2G | gzip batches ≤ 50, idempotent operations, backoff, 20 s timeout | api.test gzip; sync.test backoff |
 | NFR-3 | 8–12 h shift without losing data | Drafts encrypted after every answer, resume after reload/lock, error boundary | flow.test resume; browser reload mid-screening |
-| NFR-4 | Item-10 flag not dismissible without supervisor | Worker safety modal (no close), flag stays until supervisor acknowledges with notes, end-of-clinic-day deadline and OVERDUE, mock notification | flow.test; api.test escalation; browser run |
+| NFR-4 | Item-10 flag not dismissible without supervisor | Worker safety modal (no close), flag stays until supervisor acknowledges with notes, end-of-clinic-day deadline and OVERDUE, live dashboard polling while open and optional local notification | flow.test; api.test escalation; browser run |
 | NFR-5 | Never presented as a diagnosis | Disclaimer on results, case detail, PDF, self-referral, question screen | flow.test |
 | NFR-6 | NDPA explicit consent | Consent statement read aloud + two confirmations; self-referral consent; server rejects without consent | api.test consent |
 | NFR-7 | Audit every action with health-worker ID | Server audit on every operation and login; client-only events synced; `AdminAudit.jsx` | api.test audit; browser run |
@@ -65,5 +65,4 @@ against the live server. Tests: `server/test/api.test.mjs` (14) and `maternawell
 
 ## Known gaps
 
-Verified crisis numbers, the validated Yoruba EPDS text, a real SMS gateway, account administration, and field testing
-on real devices over 2G. See the root README.
+Validated Yoruba EPDS text, background SMS/push delivery, account administration, confirmation of local emergency number availability, and field testing on real devices over 2G and a full shift. See the root README.

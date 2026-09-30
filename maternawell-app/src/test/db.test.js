@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { db, enqueueOperation, listCases, listDrafts, listQueuedSelfReferrals, purgeLegacyPlaintext, putCase, putDraft, queueSelfReferral } from '../db/db';
+import { db, enqueueOperation, listCases, listDrafts, listQueuedSelfReferrals, migrateLegacyForUser, putCase, putDraft, queueSelfReferral } from '../db/db';
 import { deriveKey, generateSalt } from '../utils/crypto';
+import { scoreEpds } from '../domain/epds';
+import Dexie from 'dexie';
 
 const record = {
   id: 'case-1', facilityId: 'phc-ikeja', completedAt: '2026-09-26T09:00:00.000Z',
@@ -12,6 +14,7 @@ describe('On-device store (FR-8, NFR-8)', () => {
   let key;
   beforeEach(async () => {
     await Promise.all(db.tables.map(table => table.clear()));
+    localStorage.clear();
     key = await deriveKey('Worker01!2026', generateSalt());
   });
 
@@ -28,7 +31,7 @@ describe('On-device store (FR-8, NFR-8)', () => {
     expect((await listCases('HW-01', key))[0].motherData.name).toBe('Amina Bello');
     expect(await listCases('SUP-01', key)).toEqual([]);
     const otherKey = await deriveKey('someone-else', generateSalt());
-    expect(await listCases('HW-01', otherKey)).toEqual([]);
+    await expect(listCases('HW-01', otherKey)).rejects.toThrow(/Decryption failed/);
   });
 
   it('keeps drafts so an interrupted screening survives a reload (NFR-3)', async () => {
@@ -44,9 +47,28 @@ describe('On-device store (FR-8, NFR-8)', () => {
     expect(submission.motherData.contactInfo).toBe('0803 555 0101');
   });
 
-  it('removes plaintext left in localStorage by earlier builds', () => {
-    localStorage.setItem('maternawell_screenings', '[{"motherName":"Old"}]');
-    purgeLegacyPlaintext();
-    expect(localStorage.getItem('maternawell_screenings')).toBeNull();
+  it('imports attributable legacy cases, recomputes their score, and retains unowned data', async () => {
+    const legacy = { ...record, workerId: 'HW-01', score: 0, motherData: { ...record.motherData, consentGiven: true }, syncStatus: 'pending' };
+    await db.screenings.put(legacy);
+    await db.auditLog.put({ id: 'old-audit', userId: 'HW-01', facilityId: 'phc-ikeja', action: 'SCREENING_STARTED', details: { caseId: 'case-1' } });
+    localStorage.setItem('maternawell_screenings', JSON.stringify([{ ...legacy, id: 'case-2', workerId: 'HW-02' }]));
+    const result = await migrateLegacyForUser({ id: 'HW-01', staffId: 'HW-01', facilityId: 'phc-ikeja' }, 'Worker01!2026', key);
+    expect(result.migrated).toBe(2);
+    expect((await listCases('HW-01', key))[0].score).toBe(scoreEpds(record.answers));
+    expect(await db.screenings.count()).toBe(0);
+    expect(await db.auditTrail.count()).toBe(1);
+    expect(await db.syncOutbox.count()).toBe(1);
+    expect(localStorage.getItem('maternawell_screenings')).toContain('case-2');
+  });
+
+  it('keeps version-1 records intact through the schema upgrade', async () => {
+    db.close();
+    await db.delete();
+    const old = new Dexie('MaternawellDB');
+    old.version(1).stores({ screenings: 'id, workerId, facilityId' });
+    await old.screenings.put({ id: 'old-case', workerId: 'HW-01', facilityId: 'phc-ikeja' });
+    old.close();
+    await db.open();
+    expect(await db.screenings.get('old-case')).toMatchObject({ workerId: 'HW-01' });
   });
 });

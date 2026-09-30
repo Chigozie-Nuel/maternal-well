@@ -69,6 +69,39 @@ describe('Outbox sync engine (FR-9, NFR-2)', () => {
     expect(await db.syncOutbox.count()).toBe(1);
   });
 
+  it('renews authentication after an offline sign-in and uploads queued work on reconnect', async () => {
+    const item = await enqueueOperation('HW-01', { entityId: 'c1', action: 'CREATE', payload: { id: 'c1' } }, key);
+    const renew = vi.fn().mockResolvedValue('renewed-token');
+    const fetchMock = vi.fn((url, init) => {
+      expect(init.headers.Authorization).toBe('Bearer renewed-token');
+      return url.includes('/push') ? json({ acceptedIds: [item.id], rejectedItems: [] }) : json({ screenings: [], cursor: 1 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await syncNow({ ...context, token: null, renew });
+    expect(renew).toHaveBeenCalledOnce();
+    expect(result.pushed).toBe(1);
+    expect(await db.syncOutbox.count()).toBe(0);
+    expect(getSyncState().lastSyncAt).toBeTruthy();
+  });
+
+  it('does not claim staff synchronization succeeded when no credential can be restored', async () => {
+    await enqueueOperation('HW-01', { entityId: 'c1', action: 'CREATE', payload: {} }, key);
+    const previousSync = getSyncState().lastSyncAt;
+    const result = await syncNow({ ...context, token: null });
+    expect(result.error).toMatch(/Sign in online/);
+    expect(getSyncState().lastSyncAt).toBe(previousSync);
+    expect(await db.syncOutbox.count()).toBe(1);
+  });
+
+  it('pulls every page before reporting a completed synchronization', async () => {
+    vi.stubGlobal('fetch', vi.fn(url => url.includes('since=0')
+      ? json({ screenings: [{ id: 'a' }], auditLogs: [], cursor: 100, hasMore: true })
+      : json({ screenings: [{ id: 'b' }], auditLogs: [], cursor: 115, hasMore: false })));
+    const result = await syncNow(context);
+    expect(result.pulled).toBe(2);
+    expect(await getMeta('cursor:HW-01')).toBe(115);
+  });
+
   it('never overwrites a record that still has local changes queued', async () => {
     await putCase('HW-01', { id: 'c1', referralOutcome: 'contacted' }, key);
     const op = await enqueueOperation('HW-01', { entityId: 'c1', action: 'FOLLOW_UP', payload: { outcome: 'contacted', notes: 'x' } }, key);
