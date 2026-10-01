@@ -26,10 +26,10 @@ Create a Google Doc titled `Ndubuaku_Chigozie_Emmanuel_[Summative]_[MMDDYYYY]`, 
 Maternawell Nigeria — Final Prototype Summative
 Presenter: Ndubuaku Chigozie Emmanuel
 
-Self-recorded demo video (5–10 minutes): [video sharing URL]
-Public GitHub repository: [public GitHub URL]
-Publicly accessible prototype: [live HTTPS app URL]
-Software Requirements Specification: [SRS sharing URL]
+Self-recorded demo video (5–10 minutes): [add your video sharing URL]
+Public GitHub repository: https://github.com/Chigozie-Nuel/maternal-well
+Publicly accessible prototype: https://chigozie-nuel.github.io/maternal-well/
+Software Requirements Specification: https://github.com/Chigozie-Nuel/maternal-well/blob/main/Ndubuaku_Chigozie_Emmanuel_Assignment1_W4_08-01-2026%20(1).pdf
 ```
 
 Upload the video to a service that provides a shareable URL and grants access to anyone with the link. The SRS PDF is also in this repository, but the rubric asks for an SRS **link**, so use its public GitHub file URL or another accessible document URL. Set the Google Doc sharing to **Anyone with the link → Viewer**. Finally, open the document, video, GitHub repo, SRS, and app links in a signed-out/private browser window. Confirm that each loads, the video plays, and the app's demo login works. A local file path or an inaccessible private link does not satisfy the rubric.
