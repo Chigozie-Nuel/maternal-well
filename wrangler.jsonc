@@ -1,19 +1,24 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "maternawell-prototype-api",
-  "main": "worker/index.mjs",
-  "compatibility_date": "2026-09-30",
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "maternawell-prototype",
-      "database_id": "970e165e-4d34-475e-9f88-d694dbd481f8"
-    }
-  ],
-  "vars": {
-    "PUBLIC_DEMO": "true",
-    "ALLOWED_ORIGIN": "https://chigozie-nuel.github.io"
-  }
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "maternawell-prototype-api",
+	"account_id": "2dc46f7dd298c5dff79967075b8c0690",
+	"main": "worker/index.mjs",
+	"compatibility_date": "2026-09-30",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "maternawell-prototype",
+			"database_id": "7d79d0d8-5ae9-417b-bb5d-88031b15abfe"
+		}
+	],
+	"vars": {
+		"PUBLIC_DEMO": "true",
+		"ALLOWED_ORIGIN": "https://chigozie-nuel.github.io"
+	}
 }

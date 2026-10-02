@@ -37,7 +37,7 @@ jobs:
         env:
           VITE_GITHUB_PAGES: 'true'
           VITE_PUBLIC_DEMO: 'true'
-          VITE_API_BASE: https://maternawell-prototype-api.tech-041.workers.dev
+          VITE_API_BASE: https://maternawell-prototype-api.ndubuakuchigozie7.workers.dev
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -7,8 +7,9 @@ Deploy from the repository root:
 ```text
 npm install
 npx wrangler login
+npx wrangler whoami
 npx wrangler d1 create maternawell-prototype --binding DB
-# Put the returned database ID into wrangler.jsonc.
+# Put the returned database ID and your Cloudflare account ID into wrangler.jsonc.
 npx wrangler d1 migrations apply maternawell-prototype --remote
 npx wrangler secret put MATERNAWELL_DATA_KEY
 npx wrangler deploy
